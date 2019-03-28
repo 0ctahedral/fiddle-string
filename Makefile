@@ -30,13 +30,6 @@ output/%.o: output/%.s
 output/%.s: input/%.garter main
 	./main $< > $@
 
-gctest.o: gctest.c gc.h
-	gcc gctest.c -m32 -c -g -o gctest.o
-
-gc.o: gc.c gc.h
-	gcc gc.c -m32 -c -g -o gc.o
-
-
 clean:
 	rm -rf output/*.o output/*.s output/*.dSYM output/*.run *.log *.o
 	rm -rf _build/

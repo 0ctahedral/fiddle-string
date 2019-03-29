@@ -1,7 +1,5 @@
 %{
 open Exprs
-open Errors
-open Pretty
 
 let full_span() = (Parsing.symbol_start_pos (), Parsing.symbol_end_pos ())
 let tok_span(start, endtok) = (Parsing.rhs_start_pos start, Parsing.rhs_end_pos endtok)

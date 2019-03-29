@@ -38,11 +38,11 @@ prim1 :
   | PRINTSTACK { PrintStack }
 
 bindings :
-  | bind EQUAL expr { [($1, $3, tok_span(1, 1))] }
-  | bind EQUAL expr COMMA bindings { ($1, $3, tok_span(1, 1))::$5 }
+  | bind EQUAL expr { [($1, $3, full_span())] }
+  | bind EQUAL expr COMMA bindings { ($1, $3, tok_span(1, 3))::$5 }
 
 namebindings :
-  | namebind EQUAL expr { [($1, $3, tok_span(1, 3))] }
+  | namebind EQUAL expr { [($1, $3, full_span())] }
   | namebind EQUAL expr COMMA namebindings { ($1, $3, tok_span(1, 3))::$5 }
 
 expr :

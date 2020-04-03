@@ -3,11 +3,12 @@ open Exprs
 
 let full_span() = (Parsing.symbol_start_pos (), Parsing.symbol_end_pos ())
 let tok_span(start, endtok) = (Parsing.rhs_start_pos start, Parsing.rhs_end_pos endtok)
+
 %}
 
-%token <int> NUM
+%token <int64> NUM
 %token <string> ID TYID
-%token DEF ANDDEF ADD1 SUB1 LPARENSPACE LPARENNOSPACE RPAREN LBRACK RBRACK LBRACE RBRACE LET IN OF EQUAL COMMA PLUS MINUS TIMES IF COLON ELSECOLON EOF PRINT PRINTSTACK TRUE FALSE ISBOOL ISNUM ISTUPLE EQEQ LESSSPACE LESSNOSPACE GREATER LESSEQ GREATEREQ AND OR NOT THINARROW COLONEQ SEMI NIL TYPE LAMBDA BEGIN END REC UNDERSCORE
+%token DEF ANDDEF ADD1 SUB1 LPARENSPACE LPARENNOSPACE RPAREN LBRACK RBRACK LBRACE RBRACE LET IN OF EQUAL COMMA PLUS MINUS TIMES IF COLON ELSECOLON EOF PRINT PRINTSTACK TRUE FALSE ISBOOL ISNUM ISTUPLE EQEQ LESSSPACE LESSNOSPACE GREATER LESSEQ GREATEREQ AND OR NOT THINARROW COLONEQ SEMI NIL TYPE LAMBDA BEGIN END SHADOW REC UNDERSCORE
 
 %right SEMI
 %left COLON
@@ -25,7 +26,8 @@ const :
   | NUM { ENumber($1, full_span()) }
   | TRUE { EBool(true, full_span()) }
   | FALSE { EBool(false, full_span()) }
-  | NIL COLON typ { ENil($3, full_span()) }
+  | NIL %prec SEMI { ENil(TyBlank(full_span()), full_span()) }
+  | NIL COLON typ %prec COLON { ENil($3, full_span()) }
 
 prim1 :
   | ADD1 { Add1 }
@@ -51,7 +53,8 @@ expr :
   | IF expr COLON expr ELSECOLON expr { EIf($2, $4, $6, full_span()) }
   | BEGIN expr END { $2 }
   | binop_expr SEMI expr { ESeq($1, $3, full_span()) }
-  | binop_expr %prec SEMI { $1 }
+  | binop_expr SEMI LESSNOSPACE typ GREATER expr { ESeq(EAnnot($1, $4, tok_span(1, 5)), $6, full_span()) }
+  | binop_expr { $1 }
 
 exprs :
   | expr { [$1] }
@@ -66,25 +69,55 @@ tuple_expr :
   | LPARENSPACE expr COMMA exprs RPAREN { ETuple($2::$4, full_span()) }
 
 tuple_get :
-  | id LBRACK NUM OF NUM RBRACK { EGetItem($1, $3, $5, full_span()) }
-  | tuple_get LBRACK NUM OF NUM RBRACK { EGetItem($1, $3, $5, full_span()) }
+  | id LBRACK NUM OF NUM RBRACK { EGetItem($1, Int64.to_int $3, Int64.to_int $5, full_span()) }
+  | tuple_get LBRACK NUM OF NUM RBRACK { EGetItem($1, Int64.to_int $3, Int64.to_int $5, full_span()) }
 
 tuple_set :
-  | id LBRACK NUM OF NUM COLONEQ expr RBRACK { ESetItem($1, $3, $5, $7, full_span()) }
-  | tuple_get LBRACK NUM OF NUM COLONEQ expr RBRACK { ESetItem($1, $3, $5, $7, full_span()) }
-  | tuple_set LBRACK NUM OF NUM COLONEQ expr RBRACK { ESetItem($1, $3, $5, $7, full_span()) }
+  | id LBRACK NUM OF NUM COLONEQ expr RBRACK { ESetItem($1, Int64.to_int $3, Int64.to_int $5, $7, full_span()) }
+  | tuple_get LBRACK NUM OF NUM COLONEQ expr RBRACK { ESetItem($1, Int64.to_int $3, Int64.to_int $5, $7, full_span()) }
+  | tuple_set LBRACK NUM OF NUM COLONEQ expr RBRACK { ESetItem($1, Int64.to_int $3, Int64.to_int $5, $7, full_span()) }
+
+id :
+  | ID %prec COLON { EId($1, full_span()) }
+  | LPARENNOSPACE ID COLON typ RPAREN { EAnnot(EId($2, tok_span(2, 2)), $4, full_span()) }
+  | LPARENSPACE ID COLON typ RPAREN { EAnnot(EId($2, tok_span(2, 2)), $4, full_span()) }
 
 
-simple_expr :
+prim2 :
+  | PLUS { Plus }
+  | MINUS { Minus }
+  | TIMES { Times }
+  | AND { And }
+  | OR { Or }
+  | GREATER { Greater }
+  | GREATEREQ { GreaterEq }
+  | LESSSPACE { Less }
+  | LESSEQ { LessEq }
+  | EQEQ { Eq }
+
+binop_expr :
+  | binop_expr prim2 binop_operand %prec PLUS { EPrim2($2, None, $1, $3, full_span()) }
+  | binop_expr prim2 LESSNOSPACE typs GREATER binop_operand { EPrim2($2, Some $4, $1, $6, full_span()) }
+  | binop_operand %prec PLUS { $1 }
+
+binop_operand :
   // Primops
-  | prim1 LPARENNOSPACE expr RPAREN { EPrim1($1, $3, full_span()) }
+  | prim1 LPARENNOSPACE expr RPAREN { EPrim1($1, None, $3, full_span()) }
+  | prim1 LESSNOSPACE typs GREATER LPARENNOSPACE expr RPAREN { EPrim1($1, Some $3, $6, full_span()) }
   // Tuples
   | tuple_expr { $1 }
   | tuple_get { $1 }
   | tuple_set { $1 }
+  // Function calls
+  | binop_operand LPARENNOSPACE exprs RPAREN %prec LPARENNOSPACE { EApp($1, $3, Unknown, full_span()) }
+  | binop_operand LPARENNOSPACE RPAREN %prec LPARENNOSPACE { EApp($1, [], Unknown, full_span()) }
+  | binop_operand LESSNOSPACE typs GREATER LPARENNOSPACE exprs RPAREN { EGenApp($1, $3, $6, Unknown, full_span()) }
+  | binop_operand LESSNOSPACE typs GREATER LPARENNOSPACE RPAREN { EGenApp($1, $3, [], Unknown, full_span()) }
   // Parentheses
   | LPARENSPACE expr RPAREN { $2 }
   | LPARENNOSPACE expr RPAREN { $2 }
+  | LPARENNOSPACE expr COLON typ RPAREN { EAnnot($2, $4, full_span()) }
+  | LPARENSPACE expr COLON typ RPAREN { EAnnot($2, $4, full_span()) }
   // Lambdas
   | LPARENNOSPACE LAMBDA LPARENNOSPACE binds RPAREN COLON expr RPAREN { ELambda($4, $7, full_span()) }
   | LPARENNOSPACE LAMBDA LPARENSPACE binds RPAREN COLON expr RPAREN { ELambda($4, $7, full_span()) }
@@ -92,46 +125,30 @@ simple_expr :
   | LPARENSPACE LAMBDA LPARENNOSPACE binds RPAREN COLON expr RPAREN { ELambda($4, $7, full_span()) }
   | LPARENSPACE LAMBDA LPARENSPACE binds RPAREN COLON expr RPAREN { ELambda($4, $7, full_span()) }
   | LPARENSPACE LAMBDA COLON expr RPAREN { ELambda([], $4, full_span()) }
-  // Function calls
-  | binop_expr LPARENNOSPACE exprs RPAREN { EApp($1, $3, full_span()) }
-  | binop_expr LPARENNOSPACE RPAREN { EApp($1, [], full_span()) }
   // Simple cases
   | const { $1 }
-  | LPARENNOSPACE expr COLON typ RPAREN { EAnnot($2, $4, full_span()) }
-  | LPARENSPACE expr COLON typ RPAREN { EAnnot($2, $4, full_span()) }
   | id { $1 }
-
-id :
-  | ID %prec COLON { EId($1, full_span()) }
-
-
-binop_expr :
-  | binop_expr PLUS binop_expr { EPrim2(Plus, $1, $3, full_span()) }
-  | binop_expr MINUS binop_expr { EPrim2(Minus, $1, $3, full_span()) }
-  | binop_expr TIMES binop_expr { EPrim2(Times, $1, $3, full_span()) }
-  | binop_expr AND binop_expr { EPrim2(And, $1, $3, full_span()) }
-  | binop_expr OR binop_expr { EPrim2(Or, $1, $3, full_span()) }
-  | binop_expr GREATER binop_expr { EPrim2(Greater, $1, $3, full_span()) }
-  | binop_expr GREATEREQ binop_expr { EPrim2(GreaterEq, $1, $3, full_span()) }
-  | binop_expr LESSSPACE binop_expr { EPrim2(Less, $1, $3, full_span()) }
-  | binop_expr LESSNOSPACE binop_expr { EPrim2(Less, $1, $3, full_span()) }
-  | binop_expr LESSEQ binop_expr { EPrim2(LessEq, $1, $3, full_span()) }
-  | binop_expr EQEQ binop_expr { EPrim2(Eq, $1, $3, full_span()) }
-  | simple_expr { $1 }
 
 decl :
   | DEF ID LPARENNOSPACE RPAREN COLON expr
-    { let arg_pos = Parsing.rhs_start_pos 3, Parsing.rhs_end_pos 4 in
+    { let arg_pos = tok_span(3, 4) in
       DFun($2, [], SForall([], TyArr([], TyBlank arg_pos, arg_pos), arg_pos), $6, full_span()) }
   | DEF ID LPARENNOSPACE RPAREN THINARROW typ COLON expr
     {
       let typ_pos = tok_span(6, 6) in
       DFun($2, [], SForall([], TyArr([], $6, typ_pos), typ_pos), $8, full_span()) }
+  | DEF ID LESSNOSPACE tyids GREATER LPARENNOSPACE RPAREN THINARROW typ COLON expr
+    {
+      let arg_types = [] in
+      let arrow_pos = tok_span(6, 9) in
+      let typ_pos = tok_span(3, 9) in
+      DFun($2, [], SForall($4, TyArr(arg_types, $9, arrow_pos), typ_pos), $11, full_span())
+    }
   | DEF ID LESSNOSPACE tyids GREATER LPARENNOSPACE binds RPAREN THINARROW typ COLON expr
     {
       let arg_types = List.map bind_to_typ $7 in
-      let arrow_pos = (Parsing.rhs_start_pos 6, Parsing.rhs_end_pos 10) in
-      let typ_pos = (Parsing.rhs_start_pos 3, Parsing.rhs_end_pos 10) in
+      let arrow_pos = tok_span(6, 10) in
+      let typ_pos = tok_span(3, 10) in
       DFun($2, $7, SForall($4, TyArr(arg_types, $10, arrow_pos), typ_pos), $12, full_span())
     }
   | DEF ID LPARENNOSPACE binds RPAREN COLON expr
@@ -170,14 +187,17 @@ blankbind :
   | UNDERSCORE COLON typ { BBlank($3, full_span()) }
 
 namebind :
-  | ID %prec SEMI { BName($1, TyBlank(full_span()), full_span()) }
-  | ID COLON typ { BName($1, $3, full_span()) }
+  | ID %prec SEMI { BName($1, false, TyBlank(full_span()), full_span()) }
+  | ID COLON typ { BName($1, false, $3, full_span()) }
+  | SHADOW ID %prec SEMI { BName($2, true, TyBlank(full_span()), full_span()) }
+  | SHADOW ID COLON typ { BName($2, true, $4, full_span()) }
 
 typ :
-  | ID { TyCon($1, full_span()) }
+  | ID %prec SEMI { TyCon($1, full_span()) }
   | tyid { $1 }
   | arrowtyp { $1 }
   | tupletyp { $1 }
+  | ID LESSNOSPACE typs GREATER { TyApp($1, $3, full_span()) }
 
 arrowtyp :
   | LPARENNOSPACE typs THINARROW typ RPAREN { TyArr($2, $4, full_span()) }
@@ -205,17 +225,21 @@ declgroup :
   | decl { [$1] }
   | decl ANDDEF declgroup { $1::$3 }
 
+
 decls :
   | { [] }
   | declgroup decls { $1::$2 }
 
 tydecl :
-  | TYPE ID EQUAL LPARENNOSPACE startyps RPAREN { TyDecl($2, $5, full_span()) }
-  | TYPE ID EQUAL LPARENSPACE startyps RPAREN { TyDecl($2, $5, full_span()) }
+  | TYPE ID EQUAL LPARENNOSPACE startyps RPAREN { TyDecl($2, None, $5, full_span()) }
+  | TYPE ID EQUAL LPARENSPACE startyps RPAREN { TyDecl($2, None, $5, full_span()) }
+  | TYPE ID LESSNOSPACE tyids GREATER EQUAL LPARENNOSPACE startyps RPAREN { TyDecl($2, Some $4, $8, full_span()) }
+  | TYPE ID LESSNOSPACE tyids GREATER EQUAL LPARENSPACE startyps RPAREN { TyDecl($2, Some $4, $8, full_span()) }
 
 tydecls :
   | { [] }
   | tydecl tydecls { $1 :: $2 }
+
 
 program :
   | tydecls decls expr COLON typ EOF { Program($1, $2, EAnnot($3, $5, tok_span(3, 5)), full_span()) }

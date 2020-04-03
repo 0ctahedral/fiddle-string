@@ -2,6 +2,17 @@
   open Lexing
   open Parser
   open Printf
+
+let ignore_new_line lexbuf =
+  let lcp = lexbuf.lex_curr_p in
+  if lcp != dummy_pos then
+    lexbuf.lex_curr_p <-
+      { lcp with
+        pos_lnum = lcp.pos_lnum + 1;
+        pos_bol = lcp.pos_cnum;
+      };
+    lexbuf.lex_start_p <- lexbuf.lex_curr_p
+
 }
 
 let dec_digit = ['0'-'9']
@@ -18,14 +29,14 @@ let space = [' ' '\t' '\n']+
 rule token = parse
   | '#' [^ '\n']+ { token lexbuf }
   | blank "(" { LPARENSPACE }
-  | '\n' "(" { LPARENSPACE }
+  | '\n' "(" { ignore_new_line lexbuf; LPARENSPACE }
   | blank "<=" { LESSEQ }
-  | '\n' "<=" { LESSEQ }
+  | '\n' "<=" { ignore_new_line lexbuf; LESSEQ }
   | blank "<" { LESSSPACE }
-  | '\n' "<" { LESSSPACE }
+  | '\n' "<" { ignore_new_line lexbuf; LESSSPACE }
   | blank { token lexbuf }
   | '\n' { new_line lexbuf; token lexbuf }
-  | signed_int as x { NUM (int_of_string x) }
+  | signed_int as x { NUM (Int64.of_string x) }
   | "->" { THINARROW }
   | ":=" { COLONEQ }
   | ":" { COLON }
@@ -74,7 +85,8 @@ rule token = parse
   | "begin" { BEGIN }
   | "end" { END }
   | "rec" { REC }
-  | tyident as x { TYID x }
+  | "shadow" { SHADOW }
+  | tyident as x { TYID (String.sub x 1 (String.length x - 1)) }
   | ident as x { if x = "_" then UNDERSCORE else ID x }
   | eof { EOF }
   | _ as c { failwith (sprintf "Unrecognized character: %c" c) }

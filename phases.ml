@@ -17,11 +17,12 @@ type phase =
   | Source of string
   | Parsed of sourcespan program
   | WellFormed of sourcespan program
-  | DesugaredBindings of sourcespan program
+  | TypeInferred of sourcespan program
   | TypeChecked of sourcespan program
   | Renamed of tag program
+  | Desugared of sourcespan program
+  | AddedNatives of sourcespan program
   | Tagged of tag program
-  | DesugaredDecls of tag program
   | ANFed of tag aprogram
   | Result of string
 ;;
@@ -30,12 +31,13 @@ type phase =
 let source s = Source s
 let parsed p = Parsed p
 let well_formed p = WellFormed p
-let desugared_bindings p = DesugaredBindings p
 let renamed p = Renamed p
+let desugared p = Desugared p
 let tagged p = Tagged p
+let type_inferred p = TypeInferred p
 let type_checked p = TypeChecked p
-let desugared_decls p = DesugaredDecls p
 let anfed p = ANFed p
+let add_natives p = AddedNatives p
 let result s = Result s
 ;;
 
@@ -102,24 +104,26 @@ let print_trace (trace : phase list) : string list =
   let phase_name p = match p with
     | Source _ -> "Source"
     | Parsed _ -> "Parsed"
-    | DesugaredBindings _ -> "Desugared bindings"
     | WellFormed _ -> "Well-formed"
     | Renamed  _ -> "Renamed"
+    | Desugared _ -> "Desugared"
+    | AddedNatives _ -> "Natives Added"
     | Tagged _ -> "Tagged"
+    | TypeInferred _ -> "TypeInferred"
     | TypeChecked _ -> "TypeChecked"
-    | DesugaredDecls _ -> "Desugared decls"
     | ANFed _ -> "ANF'ed"
     | Result _ -> "Result" in
   let string_of_phase p = match p with
     | Source s -> s
     | Parsed p
-    | DesugaredBindings p
     | WellFormed p -> string_of_program p
     | Renamed p -> string_of_program p
+    | Desugared p -> string_of_program p
+    | AddedNatives p -> string_of_program p
+    | TypeInferred p
     | TypeChecked p -> ast_of_program p
-    | DesugaredDecls p -> ast_of_program p
-    | Tagged p -> string_of_program_with (fun tag -> sprintf "@%d" tag) p
-    | ANFed p -> string_of_aprogram_with (fun tag -> sprintf "@%d" tag)  p
+    | Tagged p -> string_of_program_with 1000 (fun tag -> sprintf "@%d" tag) p
+    | ANFed p -> string_of_aprogram_with 1000 (fun tag -> sprintf "@%d" tag)  p
     | Result s -> s in
   List.mapi (fun n p -> sprintf "Phase %d (%s):\n%s" n (phase_name p) (string_of_phase p)) (List.rev trace)
 ;;

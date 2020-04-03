@@ -1,32 +1,42 @@
 open Printf
 
 (* Abstract syntax of (a small subset of) x86 assembly instructions *)
-let word_size = 4
+let word_size = 8
 ;;
 
 type reg =
-  | EAX
-  | ECX
-  | EDX
-  | ESP
-  | EBP
-  | ESI
+  | RAX
+  | RSP
+  | RBP
+  | RSI
+  | RDI
+  | RDX
+  | RCX
+  | R8
+  | R9
+  | R10
+  | R11
+  | R12
+  | R13
+  | R14
+  | R15
   | CL
 
 type size =
+  | QWORD_PTR
   | DWORD_PTR
   | WORD_PTR
   | BYTE_PTR
 
 type arg =
-  | Const of int
-  | HexConst of int
+  | Const of int64
+  | HexConst of int64
   | Reg of reg
   | RegOffset of int * reg (* int is # words of offset *)
   | RegOffsetReg of reg * reg * int * int
   | Sized of size * arg
-  | Label of string
   | LabelContents of string
+  | Label of string
 
 type instruction =
   | IMov of arg * arg
@@ -69,18 +79,27 @@ type instruction =
 
 let r_to_asm (r : reg) : string =
   match r with
-  | EAX -> "eax"
-  | ESP -> "esp"
-  | EBP -> "ebp"
-  | ESI -> "esi"
-  | ECX -> "ecx"
-  | EDX -> "edx"
-  | CL -> "cl"
+  | RAX -> "RAX"
+  | RSI -> "RSI"
+  | RDI -> "RDI"
+  | RCX -> "RCX"
+  | RDX -> "RDX"
+  | RSP -> "RSP"
+  | RBP -> "RBP"
+  | R8  -> "R8"
+  | R9  -> "R9"
+  | R10 -> "R10"
+  | R11 -> "R11"
+  | R12 -> "R12"
+  | R13 -> "R13"
+  | R14 -> "R14"
+  | R15 -> "R15"
+  | CL  -> "CL"
 
 let rec arg_to_asm (a : arg) : string =
   match a with
-  | Const(n) -> sprintf "%d" n
-  | HexConst(n) -> sprintf "0x%lx" (Int32.of_int n)
+  | Const(n) -> sprintf "%Ld" n
+  | HexConst(n) -> sprintf "0x%Lx" n
   | Reg(r) -> r_to_asm r
   | RegOffset(n, r) ->
      if n >= 0 then
@@ -92,10 +111,10 @@ let rec arg_to_asm (a : arg) : string =
              (r_to_asm r1) (r_to_asm r2) mul off
   | Sized(size, a) ->
      sprintf "%s %s"
-             (match size with | DWORD_PTR -> "DWORD" | WORD_PTR -> "WORD" | BYTE_PTR -> "BYTE")
+             (match size with | QWORD_PTR -> "QWORD" | DWORD_PTR -> "DWORD" | WORD_PTR -> "WORD" | BYTE_PTR -> "BYTE")
              (arg_to_asm a)
-  | Label s -> s
   | LabelContents s -> sprintf "[%s]" s
+  | Label s -> s
 ;;
 
 let rec i_to_asm (i : instruction) : string =
@@ -112,28 +131,28 @@ let rec i_to_asm (i : instruction) : string =
      sprintf "  cmp %s, %s" (arg_to_asm left) (arg_to_asm right)
   | ILabel(name) ->
      name ^ ":"
-  | IJo(dest) ->
-     sprintf "  jo near %s" (arg_to_asm dest)
-  | IJno(dest) ->
-     sprintf "  jno near %s" (arg_to_asm dest)
-  | IJe(dest) ->
-     sprintf "  je near %s" (arg_to_asm dest)
-  | IJne(dest) ->
-     sprintf "  jne near %s" (arg_to_asm dest)
-  | IJl(dest) ->
-     sprintf "  jl near %s" (arg_to_asm dest)
-  | IJle(dest) ->
-     sprintf "  jle near %s" (arg_to_asm dest)
-  | IJg(dest) ->
-     sprintf "  jg near %s" (arg_to_asm dest)
-  | IJge(dest) ->
-     sprintf "  jge near %s" (arg_to_asm dest)
-  | IJmp(dest) ->
-     sprintf "  jmp near %s" (arg_to_asm dest)
-  | IJz(dest) ->
-     sprintf "  jz near %s" (arg_to_asm dest)
-  | IJnz(dest) ->
-     sprintf "  jnz near %s" (arg_to_asm dest)
+  | IJo(label) ->
+     sprintf "  jo near %s" (arg_to_asm label)
+  | IJno(label) ->
+     sprintf "  jno near %s" (arg_to_asm label)
+  | IJe(label) ->
+     sprintf "  je near %s" (arg_to_asm label)
+  | IJne(label) ->
+     sprintf "  jne near %s" (arg_to_asm label)
+  | IJl(label) ->
+     sprintf "  jl near %s" (arg_to_asm label)
+  | IJle(label) ->
+     sprintf "  jle near %s" (arg_to_asm label)
+  | IJg(label) ->
+     sprintf "  jg near %s" (arg_to_asm label)
+  | IJge(label) ->
+     sprintf "  jge near %s" (arg_to_asm label)
+  | IJmp(label) ->
+     sprintf "  jmp near %s" (arg_to_asm label)
+  | IJz(label) ->
+     sprintf "  jz near %s" (arg_to_asm label)
+  | IJnz(label) ->
+     sprintf "  jnz near %s" (arg_to_asm label)
   | IAnd(dest, value) ->
      sprintf "  and %s, %s" (arg_to_asm dest) (arg_to_asm value)
   | IOr(dest, value) ->

@@ -1,14 +1,33 @@
 #include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
 
-void naive_print_heap(int* heap, int size) {
-  for(int i = 0; i < size; i += 1) {
-    printf("  %d/%p: %p (%d)\n", i, (heap + i), (int*)(*(heap + i)), *(heap + i));
+typedef uint64_t SNAKEVAL;
+
+void printHelp(FILE* out, SNAKEVAL val);
+extern uint64_t NUM_TAG_MASK;
+extern uint64_t CLOSURE_TAG_MASK;
+extern uint64_t TUPLE_TAG_MASK;
+extern uint64_t CLOSURE_TAG;
+extern uint64_t TUPLE_TAG;
+extern uint64_t NIL;
+extern uint64_t tupleCounter;
+extern uint64_t* STACK_BOTTOM;
+extern uint64_t* FROM_S;
+extern uint64_t* FROM_E;
+extern uint64_t* TO_S;
+extern uint64_t* TO_E;
+
+void naive_print_heap(uint64_t* heap, uint64_t* heap_end) {
+  printf("In naive_print_heap from %p to %p\n", heap, heap_end);
+  for(uint64_t i = 0; i < (uint64_t)(heap_end - heap); i += 1) {
+    printf("  %ld/%p: %p (%ld)\n", i, (heap + i), (uint64_t*)(*(heap + i)), *(heap + i));
   }
 }
 
 // Implement the functions below
 
-void smarter_print_heap(int* from_start, int* from_end, int* to_start, int* to_end) {
+void smarter_print_heap(uint64_t* from_start, uint64_t* from_end, uint64_t* to_start, uint64_t* to_end) {
   // Print out the entire heap (both semispaces), and
   // try to print values readably when possible
 }
@@ -30,7 +49,7 @@ void smarter_print_heap(int* from_start, int* from_end, int* to_start, int* to_e
     If the data needed to be copied, then this replaces the value at its old location 
     with a forwarding pointer to its new location
  */
-int* copy_if_needed(int* garter_val_addr, int* heap_top) {
+uint64_t* copy_if_needed(uint64_t* garter_val_addr, uint64_t* heap_top) {
   // no-op for now
   return heap_top;
 }
@@ -48,18 +67,19 @@ int* copy_if_needed(int* garter_val_addr, int* heap_top) {
   Returns:
     The new location within to_start at which to allocate new data
  */
-int* gc(int* bottom_frame, int* top_frame, int* top_stack, int* from_start, int* from_end, int* to_start) {
-  for (int* cur_word = top_stack /* maybe need a +1 here? */; cur_word <= top_stack; cur_word++) {
+uint64_t* gc(uint64_t* bottom_frame, uint64_t* top_frame, uint64_t* top_stack, uint64_t* from_start, uint64_t* from_end, uint64_t* to_start) {
+  for (uint64_t* cur_word = top_stack /* maybe need a +1 here? */; cur_word < top_frame; cur_word++) {
     to_start = copy_if_needed(cur_word, to_start);
   }
-  if (top_frame < bottom_frame)
+  if (top_frame < bottom_frame) {
     to_start = gc(bottom_frame,
-                  (int*)(*top_frame), // [top_frame] points to the saved EBP, which is the next stack frame
+                  (uint64_t*)(*top_frame), // [top_frame] points to the saved RBP, which is the next stack frame
                   top_frame + 2,      // [top_frame+4] points to the return address
                                       // so [top_frame+8] is the next frame's stack-top
                   from_start,
                   from_end,
                   to_start); // to_start has been changed to include any newly copied data
+  }
   // after copying the remaining stack frames, return the new allocation starting point
   return to_start;       
 }

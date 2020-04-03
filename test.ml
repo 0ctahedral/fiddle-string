@@ -7,15 +7,18 @@ open Exprs
 open Phases
 open Errors
 
-let t name program input expected = name>::test_run [] input program name expected;;
-let ta name program input expected = name>::test_run_anf [] input program name expected;;
-let tgc name heap_size program input expected = name>::test_run [string_of_int heap_size] input program name expected;;
-let tvg name program input expected = name>::test_run_valgrind [] input program name expected;;
-let tvgc name heap_size program input expected = name>::test_run_valgrind [string_of_int heap_size] input program name expected;;
-let terr name program input expected = name>::test_err [] input program name expected;;
-let tgcerr name heap_size program input expected = name>::test_err [string_of_int heap_size] input program name expected;;
+let t name program input expected = name>::test_run ~args:[] ~std_input:input program name expected;;
+let ta name program input expected = name>::test_run_anf ~args:[] ~std_input:input program name expected;;
+let tgc name heap_size program input expected = name>::test_run ~args:[string_of_int heap_size] ~std_input:input program name expected;;
+let tvg name program input expected = name>::test_run_valgrind ~args:[] ~std_input:input program name expected;;
+let tvgc name heap_size program input expected = name>::test_run_valgrind ~args:[string_of_int heap_size] ~std_input:input program name expected;;
+let terr name program input expected = name>::test_err ~args:[] ~std_input:input program name expected;;
+let tgcerr name heap_size program input expected = name>::test_err ~args:[string_of_int heap_size] ~std_input:input program name expected;;
 let tanf name program input expected = name>::fun _ ->
   assert_equal expected (anf (tag program)) ~printer:string_of_aprogram;;
+
+let tparse name program expected = name>::fun _ ->
+  assert_equal (untagP expected) (untagP (parse_string name program)) ~printer:string_of_program;;
 
 let teq name actual expected = name>::fun _ ->
   assert_equal expected actual ~printer:(fun s -> s);;
@@ -25,12 +28,12 @@ let tfvs name program expected = name>::
     let ast = parse_string name program in
     let anfed = anf (tag ast) in
     let vars = free_vars_P anfed [] in
-    let c = Pervasives.compare in
+    let c = Stdlib.compare in
     let str_list_print strs = "[" ^ (ExtString.String.join ", " strs) ^ "]" in
     assert_equal (List.sort c vars) (List.sort c expected) ~printer:str_list_print)
 ;;
 
-let builtins_size = 4 * (List.length initial_env)
+let builtins_size = 4 (* arity + 0 vars + codeptr + padding *) * (List.length TypeCheck.native_fun_bindings)
 
 let pair_tests = [
   t "tup1" "let t = (4, (5, 6)) in
@@ -62,7 +65,7 @@ let oom = [
   tgc "oomgc2" (8 + builtins_size) "(1, (3, 4))" "" "(1, (3, 4))";
   tvgc "oomgc3" (8 + builtins_size) "(1, (3, 4))" "" "(1, (3, 4))";
   tgc "oomgc4" (4 + builtins_size) "(3, 4)" "" "(3, 4)";
-  tgcerr "oomgc5" (3 + builtins_size) "(3, 4, 5, 6, 7, 8, 9)" "" "Allocation";
+  tgcerr "oomgc5" (3 + builtins_size) "(1, 2, 3, 4, 5, 6, 7, 8, 9, 0)" "" "Allocation";
 ]
 
 let gc = [
@@ -76,16 +79,19 @@ let gc = [
        end"
       ""
       "(1, 2)";
-]
+  ]
+
+let input = [
+    t "input1" "let x = input() in x + 2" "123" "125"
+  ]
 
 
 let suite =
-"suite">:::
- pair_tests @ oom @ gc
+"unit_tests">:::
+ pair_tests @ oom @ gc @ input
 
 
 
 let () =
-  run_test_tt_main suite
+  run_test_tt_main ("all_tests">:::[suite; input_file_test_suite ()])
 ;;
-

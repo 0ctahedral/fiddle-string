@@ -119,10 +119,10 @@ let is_well_formed (p : sourcespan program) : (sourcespan program) fallible =
          match bindings with
          | [] -> (env, [])
          | (b, e, loc)::rest ->
-            let (env, errs) = process_binds [b] env in
             let errs_e = wf_E e env tyenv in
-            let (env', errs') = process_bindings rest env in
-            (env', errs @ errs_e @ errs') in
+            let (env', errs) = process_binds [b] env in
+            let (env'', errs') = process_bindings rest env' in
+            (env'', errs @ errs_e @ errs') in
        let (env2, errs) = process_bindings bindings env in
        dupeIds @ errs @ wf_E body env2 tyenv
     | EApp(func, args, native, loc) ->

@@ -98,7 +98,7 @@ let is_well_formed (p : sourcespan program) : (sourcespan program) fallible =
          match binds with
          | [] -> []
          | (BBlank _::rest) -> find_dupes rest
-         | (BName(x, _, _, def)::rest) -> List.map (fun use -> DuplicateId(x, use, def)) (find_locs x rest)
+         | (BName(x, _, _, def)::rest) -> (List.map (fun use -> DuplicateId(x, use, def)) (find_locs x rest)) @ (find_dupes rest)
          | (BTuple(binds, _)::rest) -> find_dupes (binds @ rest) in
        let dupeIds = find_dupes (List.map (fun (b, _, _) -> b) bindings) in
        let rec process_binds (rem_binds : 'a bind list) (env : scope_info envt) =

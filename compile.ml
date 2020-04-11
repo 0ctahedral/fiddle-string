@@ -365,6 +365,7 @@ let desugar (p : sourcespan program) : sourcespan program =
        (BName(name, false, TyBlank(get_tag_S typ), tag), ELambda(newargs, helpE newbody, tag), tag)
   and helpBE bind =
     let (b, e, btag) = bind in
+    let e = helpE e in
     match b with
     | BTuple(binds, ttag) ->
        let typ = bind_to_typ b in
@@ -374,7 +375,7 @@ let desugar (p : sourcespan program) : sourcespan program =
         | _ ->
            let newname = gensym "tup" in
            (BName(newname, false, typ, ttag), e, btag) :: expandTuple binds ttag typ (EId(newname, ttag)))
-    | _ -> [bind]
+    | _ -> [(b, e, btag)]
   and expandTuple binds tag typ source : sourcespan binding list =
     let len = List.length binds in
     let helpB i b =
@@ -414,9 +415,9 @@ let desugar (p : sourcespan program) : sourcespan program =
     | EIf(cond, thn, els, tag) ->
        EIf(helpE cond, helpE thn, helpE els, tag)
     | EApp(name, args, native, tag) ->
-       EApp(name, List.map helpE args, native, tag)
+       EApp(helpE name, List.map helpE args, native, tag)
     | EGenApp(name, typs, args, native, tag) ->
-       EGenApp(name, typs, List.map helpE args, native, tag)
+       EGenApp(helpE name, typs, List.map helpE args, native, tag)
     | ELambda(binds, body, tag) ->
        let expandBind bind =
          match bind with

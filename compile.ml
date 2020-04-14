@@ -932,12 +932,12 @@ let run_if should_run f =
   if should_run then f else no_op_phase
 ;;
 
-let compile_to_string (should_infer : bool) (should_check : bool) (prog : sourcespan program pipeline) : string pipeline =
+let compile_to_string ?no_builtins:(no_builtins=false) (should_infer : bool) (should_check : bool) (prog : sourcespan program pipeline) : string pipeline =
   prog
   |> (add_err_phase well_formed is_well_formed)
   (* |> (run_if should_infer (add_err_phase type_inferred type_synth)) *)
   |> (run_if should_check (add_err_phase type_checked type_check))
-  |> (add_phase add_natives add_native_lambdas)
+  |> (run_if (not no_builtins) (add_phase add_natives add_native_lambdas))
   |> (add_phase desugared desugar)
   |> (add_phase tagged tag)
   |> (add_phase renamed rename_and_tag)

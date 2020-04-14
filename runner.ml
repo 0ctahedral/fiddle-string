@@ -52,16 +52,16 @@ let parse_file (name : string) input_file : sourcespan program =
   let lexbuf = Lexing.from_channel input_file in
   parse name lexbuf
 
-let compile_string_to_string (should_infer : bool) (should_check : bool) (name : string) (input : string) : string pipeline =
+let compile_string_to_string ?no_builtins:(no_builtins=false) (should_infer : bool) (should_check : bool) (name : string) (input : string) : string pipeline =
   (Ok(input, [])
    |> add_phase source (fun x -> x)
    |> add_err_phase parsed (fun input ->
           try Ok(parse_string name input)
           with err -> Error([err])))
-  |> compile_to_string should_infer should_check;;
+  |> compile_to_string ~no_builtins:no_builtins should_infer should_check;;
 
-let compile_file_to_string (should_infer : bool) (should_check : bool) (name : string) (input_file : string) : string pipeline =
-  compile_string_to_string should_infer should_check name (string_of_file input_file)
+let compile_file_to_string ?no_builtins:(no_builtins=false) (should_infer : bool) (should_check : bool) (name : string) (input_file : string) : string pipeline =
+  compile_string_to_string ~no_builtins:no_builtins should_infer should_check name (string_of_file input_file)
 
 let make_tmpfiles (name : string) (std_input : string) =
   let (stdin_read, stdin_write) = pipe() in
@@ -141,8 +141,8 @@ let run_asm (asm_string : string) (out : string) (runner : string -> string list
 
 
 
-let run p out runner should_infer should_check args std_input =
-  let maybe_asm_string = compile_to_string should_infer should_check (Ok(p, [])) in    
+let run p out runner should_infer should_check no_builtins args std_input =
+  let maybe_asm_string = compile_to_string should_infer should_check ~no_builtins:no_builtins (Ok(p, [])) in    
   match maybe_asm_string with
   | Error(errs, _) -> Error(ExtString.String.join "\n" (print_errors errs))
   | Ok(asm_string, _) ->
@@ -160,12 +160,20 @@ let run_anf p out runner was_checked args std_input =
      run_asm asm_string out runner args std_input
 
 
-type compile_opts = { valgrind: bool; infer: bool; check: bool; heap_size: int option }
+type compile_opts = { valgrind: bool; infer: bool; check: bool; no_builtins: bool; heap_size: int option }
 
 let starts_with target src =
   String.length src >= String.length target &&
     String.sub src 0 (String.length target) = target
 ;;
+
+let chomp str =
+  if str = "" then str 
+  else if str.[String.length str - 1] = '\n'
+  then String.sub str 0 (String.length str - 1)
+  else str
+;;
+
 let read_options filename : compile_opts =
   let opts =
     if Sys.file_exists filename then String.split_on_char '\n' (string_of_file filename) else [] in
@@ -175,16 +183,26 @@ let read_options filename : compile_opts =
   { valgrind = List.mem "valgrind" opts;
     infer = List.mem "infer" opts;
     check = List.mem "check" opts;
+    no_builtins = List.mem "no_builtins" opts;
     heap_size = heap_size
   }
 ;;
 
-let test_run ?should_infer:(should_infer=false) ?should_check:(should_check=false) ?args:(args=[]) ?std_input:(std_input="") program_str outfile expected ?cmp:(cmp=(=)) test_ctxt =
+let parse_args (argsfile: string) (opts: compile_opts) : string list =
+  if Sys.file_exists argsfile then
+    String.split_on_char '\n' (chomp (string_of_file argsfile))
+  else
+    match opts.heap_size with
+    | Some(size) -> [string_of_int size]
+    | None -> []
+;;
+
+let test_run ?should_infer:(should_infer=false) ?should_check:(should_check=false) ?no_builtins:(no_builtins=false) ?args:(args=[]) ?std_input:(std_input="") program_str outfile expected ?cmp:(cmp=(=)) test_ctxt =
   let full_outfile = "output/" ^ outfile in
   let result =
     try
       let program = parse_string outfile program_str in
-      run program full_outfile run_no_vg should_infer should_check args std_input
+      run program full_outfile run_no_vg should_infer should_check no_builtins args std_input
     with err -> Error(Printexc.to_string err) in
   assert_equal (Ok(expected ^ "\n")) result ~cmp:cmp ~printer:result_printer
 
@@ -193,22 +211,22 @@ let test_run_anf ?was_checked:(was_checked=false) ?args:(args=[]) ?std_input:(st
   let result = run_anf program_anf full_outfile run_no_vg was_checked args std_input in
   assert_equal (Ok(expected ^ "\n")) result ~cmp:cmp ~printer:result_printer
 
-let test_run_valgrind ?should_infer:(should_infer=false) ?should_check:(should_check=false) ?args:(args=[]) ?std_input:(std_input="") program_str outfile expected ?cmp:(cmp=(=))  test_ctxt =
+let test_run_valgrind ?should_infer:(should_infer=false) ?should_check:(should_check=false) ?no_builtins:(no_builtins=false) ?args:(args=[]) ?std_input:(std_input="") program_str outfile expected ?cmp:(cmp=(=))  test_ctxt =
   let full_outfile = "output/" ^ outfile in
   let result =
     try
       let program = parse_string outfile program_str in
-      run program full_outfile run_vg should_infer should_check args std_input
+      run program full_outfile run_vg should_infer should_check no_builtins args std_input
     with err -> Error(Printexc.to_string err) in
   assert_equal (Ok(expected ^ "\n")) result ~cmp:cmp ~printer:result_printer
 
-let test_err ?should_infer:(should_infer=false) ?should_check:(should_check=false) ?args:(args=[]) ?std_input:(std_input="") program_str outfile errmsg ?vg:(vg=false) test_ctxt =
+let test_err ?should_infer:(should_infer=false) ?should_check:(should_check=false) ?no_builtins:(no_builtins=false) ?args:(args=[]) ?std_input:(std_input="") program_str outfile errmsg ?vg:(vg=false) test_ctxt =
   let full_outfile = "output/" ^ outfile in
   let runner = if vg then run_vg else run_no_vg in
   let result =
     try
       let program = parse_string outfile program_str in
-      run program full_outfile runner should_infer should_check args std_input
+      run program full_outfile runner should_infer should_check no_builtins args std_input
     with err -> Error(Printexc.to_string err) in
   assert_equal
     (Error(errmsg))
@@ -227,12 +245,6 @@ let test_run_input ?should_infer:(should_infer=false) ?should_check:(should_chec
 let test_err_input ?should_infer:(should_infer=false) ?should_check:(should_check=false) filename ?args:(args=[]) expected test_ctxt =
   test_err ~should_infer:should_infer ~should_check:should_check ~args:args ~std_input:"" (string_of_file ("input/" ^ filename)) filename expected test_ctxt
 
-let chomp str =
-  if str = "" then str 
-  else if str.[String.length str - 1] = '\n'
-  then String.sub str 0 (String.length str - 1)
-  else str
-
 let test_does_run filename test_ctxt =
   let filename = Filename.remove_extension filename in
   let progfile = sprintf "input/do_pass/%s.garter" filename in
@@ -241,11 +253,11 @@ let test_does_run filename test_ctxt =
   let infile   = sprintf "input/do_pass/%s.in" filename in
   let opts     = read_options (sprintf "input/do_pass/%s.options" filename) in
   let prog = string_of_file progfile in
-  let args = if Sys.file_exists argsfile then String.split_on_char '\n' (chomp (string_of_file argsfile)) else [] in
+  let args = parse_args argsfile opts in
   let output = if Sys.file_exists outfile then chomp (string_of_file outfile) else "" in
   let input = if Sys.file_exists infile then (string_of_file infile) else "" in
   let runner = if opts.valgrind then test_run_valgrind else test_run in
-  runner ~should_infer:opts.infer ~should_check:opts.check ~args:args ~std_input:input prog ("do_pass/" ^ filename) output test_ctxt
+  runner ~should_infer:opts.infer ~should_check:opts.check ~no_builtins:opts.no_builtins ~args:args ~std_input:input prog ("do_pass/" ^ filename) output test_ctxt
     ~cmp: (fun check result ->
       match check, result with
       | Ok(expect_msg), Ok(actual_message) -> String.exists actual_message expect_msg
@@ -260,10 +272,10 @@ let test_does_err filename test_ctxt =
   let infile   = sprintf "input/do_err/%s.in" filename in
   let opts     = read_options (sprintf "input/do_err/%s.options" filename) in
   let prog = string_of_file progfile in
-  let args = if Sys.file_exists argsfile then String.split_on_char '\n' (chomp (string_of_file argsfile)) else [] in
+  let args = parse_args argsfile opts in
   let err = if Sys.file_exists errfile then chomp (string_of_file errfile) else "" in
   let input = if Sys.file_exists infile then (string_of_file infile) else "" in
-  test_err ~should_infer:opts.infer ~should_check:opts.check ~args:args ~std_input:input prog ("do_err/" ^ filename) err ~vg:opts.valgrind test_ctxt
+  test_err ~should_infer:opts.infer ~should_check:opts.check ~no_builtins:opts.no_builtins ~args:args ~std_input:input prog ("do_err/" ^ filename) err ~vg:opts.valgrind test_ctxt
 
 
 
@@ -274,7 +286,7 @@ let test_doesnt_run filename test_ctxt =
   let infile   = sprintf "input/dont_pass/%s.in" filename in
   let opts     = read_options (sprintf "input/dont_pass/%s.options" filename) in
   let prog = string_of_file progfile in
-  let args = if Sys.file_exists argsfile then String.split_on_char '\n' (chomp (string_of_file argsfile)) else [] in
+  let args = parse_args argsfile opts in
   let input = if Sys.file_exists infile then (string_of_file infile) else "" in
   let runner = if opts.valgrind then run_vg else run_no_vg in
 
@@ -282,7 +294,7 @@ let test_doesnt_run filename test_ctxt =
   let result =
     try
       let program = parse_string filename prog in
-      run program full_outfile runner opts.infer opts.check args input
+      run program full_outfile runner opts.infer opts.check opts.no_builtins args input
     with err -> Error(Printexc.to_string err) in
   match result with
   | Ok(unexpected) ->
@@ -297,7 +309,7 @@ let test_doesnt_err filename test_ctxt =
   let infile   = sprintf "input/dont_err/%s.in" filename in
   let opts     = read_options (sprintf "input/dont_err/%s.options" filename) in
   let prog = string_of_file progfile in
-  let args = if Sys.file_exists argsfile then String.split_on_char '\n' (string_of_file argsfile) else [] in
+  let args = parse_args argsfile opts in
   let input = if Sys.file_exists infile then (string_of_file infile) else "" in
   let runner = if opts.valgrind then run_vg else run_no_vg in
 
@@ -305,7 +317,7 @@ let test_doesnt_err filename test_ctxt =
   let result =
     try
       let program = parse_string filename prog in
-      run program full_outfile runner opts.infer opts.check args input
+      run program full_outfile runner opts.infer opts.check opts.no_builtins args input
     with err -> Error(Printexc.to_string err) in
   match result with
   | Ok _ -> assert_bool (sprintf "Program %s currently runs (as expected for now)" filename) true

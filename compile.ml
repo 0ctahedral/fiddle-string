@@ -46,7 +46,7 @@ let err_CALL_ARITY_ERR   = 15L
 
 let first_six_args_registers = [RDI; RSI; RDX; RCX; R8; R9]
 let heap_reg = R15
-let scratch_reg = R14
+let scratch_reg = R11
 
                              
 (* Prepends a list-like env onto an envt *)

@@ -75,7 +75,7 @@ let make_tmpfiles (name : string) (std_input : string) =
 
 let run_no_vg (program_name : string) args std_input : (string, string) result =
   let (rstdout, rstdout_name, rstderr, rstderr_name, rstdin) = make_tmpfiles "run" std_input in
-  let ran_pid = Unix.create_process (program_name ^ ".run") (Array.of_list ([""] @ args)) rstdin rstdout rstderr in
+  let ran_pid = Unix.create_process (program_name ^ ".run") (Array.of_list ([program_name ^ ".run"] @ args)) rstdin rstdout rstderr in
   let (_, status) = waitpid [] ran_pid in
   let result = match status with
     | WEXITED 0 -> Ok(string_of_file rstdout_name)
@@ -93,7 +93,7 @@ let run_vg (program_name : string) args std_input : (string, string) result =
   let (rstdout, rstdout_name, rstderr, rstderr_name, rstdin) = make_tmpfiles "run" std_input in
   let ran_pid =
     Unix.create_process "valgrind"
-      (Array.of_list ([""; (program_name ^ ".run")] @ args))
+      (Array.of_list (["valgrind"; (program_name ^ ".run")] @ args))
       rstdin rstdout rstderr in
   let (_, status) = waitpid [] ran_pid in
   let vg_str = string_of_file rstderr_name in
@@ -115,7 +115,7 @@ let run_asm (asm_string : string) (out : string) (runner : string -> string list
   fprintf outfile "%s" asm_string;
   close_out outfile;
   let (bstdout, bstdout_name, bstderr, bstderr_name, bstdin) = make_tmpfiles "build" "" in
-  let built_pid = Unix.create_process "make" (Array.of_list [""; out ^ ".run"]) bstdin bstdout bstderr in
+  let built_pid = Unix.create_process "make" (Array.of_list ["make"; out ^ ".run"]) bstdin bstdout bstderr in
   let (_, status) = waitpid [] built_pid in
 
   let try_running = match status with

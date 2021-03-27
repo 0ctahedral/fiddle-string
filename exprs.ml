@@ -67,8 +67,7 @@ and 'a expr =
   | EBool of bool * 'a
   | ENil of 'a typ * 'a
   | EId of string * 'a
-  | EApp of 'a expr * 'a expr list * call_type * 'a
-  | EGenApp of 'a expr * 'a typ list * 'a expr list * call_type * 'a
+  | EApp of 'a expr * 'a typ list option * 'a expr list * call_type * 'a
   | EAnnot of 'a expr * 'a typ * 'a
   | ELambda of 'a bind list * 'a expr * 'a
   | ELetRec of 'a binding list * 'a expr * 'a
@@ -141,8 +140,7 @@ let get_tag_E e = match e with
   | ENumber(_, t) -> t
   | EBool(_, t) -> t
   | EId(_, t) -> t
-  | EApp(_, _, _, t) -> t
-  | EGenApp(_, _, _, _, t) -> t
+  | EApp(_, _, _, _, t) -> t
   | EAnnot(_, _, t) -> t
   | ETuple(_, t) -> t
   | EGetItem(_, _, _, t) -> t
@@ -200,12 +198,9 @@ let rec map_tag_E (f : 'a -> 'b) (e : 'a expr) =
      let tag_thn = map_tag_E f thn in
      let tag_els = map_tag_E f els in
      EIf(tag_cond, tag_thn, tag_els, tag_if)
-  | EApp(func, args, native, a) ->
+  | EApp(func, tyargs, args, native, a) ->
      let tag_app = f a in
-     EApp(map_tag_E f func, List.map (map_tag_E f) args, native, tag_app)
-  | EGenApp(func, tyargs, args, native, a) ->
-     let tag_app = f a in
-     EGenApp(map_tag_E f func, List.map (map_tag_T f) tyargs, List.map (map_tag_E f) args, native, tag_app)
+     EApp(map_tag_E f func, map_opt (List.map (map_tag_T f)) tyargs, List.map (map_tag_E f) args, native, tag_app)
   | ELambda(binds, body, a) ->
      let tag_lam = f a in
      ELambda(List.map (map_tag_B f) binds, map_tag_E f body, tag_lam)
@@ -306,10 +301,8 @@ and untagE e =
      ELet(List.map (fun (b, e, _) -> (untagB b, untagE e, ())) binds, untagE body, ())
   | EIf(cond, thn, els, _) ->
      EIf(untagE cond, untagE thn, untagE els, ())
-  | EApp(func, args, native, _) ->
-     EApp(untagE func, List.map untagE args, native, ())
-  | EGenApp(func, tyargs, args, native, _) ->
-     EGenApp(untagE func, List.map untagT tyargs, List.map untagE args, native, ())
+  | EApp(func, tyargs, args, native, _) ->
+     EApp(untagE func, map_opt untagTs tyargs, List.map untagE args, native, ())
   | ELetRec(binds, body, _) ->
      ELetRec(List.map (fun (b, e, _) -> (untagB b, untagE e, ())) binds, untagE body, ())
   | ELambda(binds, body, _) ->

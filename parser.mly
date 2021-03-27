@@ -109,10 +109,10 @@ binop_operand :
   | tuple_get { $1 }
   | tuple_set { $1 }
   // Function calls
-  | binop_operand LPARENNOSPACE exprs RPAREN %prec LPARENNOSPACE { EApp($1, $3, Unknown, full_span()) }
-  | binop_operand LPARENNOSPACE RPAREN %prec LPARENNOSPACE { EApp($1, [], Unknown, full_span()) }
-  | binop_operand LESSNOSPACE typs GREATER LPARENNOSPACE exprs RPAREN { EGenApp($1, $3, $6, Unknown, full_span()) }
-  | binop_operand LESSNOSPACE typs GREATER LPARENNOSPACE RPAREN { EGenApp($1, $3, [], Unknown, full_span()) }
+  | binop_operand LPARENNOSPACE exprs RPAREN %prec LPARENNOSPACE { EApp($1, None, $3, Unknown, full_span()) }
+  | binop_operand LPARENNOSPACE RPAREN %prec LPARENNOSPACE { EApp($1, None, [], Unknown, full_span()) }
+  | binop_operand LESSNOSPACE typs GREATER LPARENNOSPACE exprs RPAREN { EApp($1, Some $3, $6, Unknown, full_span()) }
+  | binop_operand LESSNOSPACE typs GREATER LPARENNOSPACE RPAREN { EApp($1, Some $3, [], Unknown, full_span()) }
   // Parentheses
   | LPARENSPACE expr RPAREN { $2 }
   | LPARENNOSPACE expr RPAREN { $2 }

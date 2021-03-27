@@ -125,7 +125,7 @@ let is_well_formed (p : sourcespan program) : (sourcespan program) fallible =
             (env'', errs @ errs_e @ errs') in
        let (env2, errs) = process_bindings bindings env in
        dupeIds @ errs @ wf_E body env2 tyenv
-    | EApp(func, args, native, loc) ->
+    | EApp(func, None, args, native, loc) ->
        let rec_errors = List.concat (List.map (fun e -> wf_E e env tyenv) (func :: args)) in
        (match func with
         | EId(funname, _) -> 
@@ -136,7 +136,7 @@ let is_well_formed (p : sourcespan program) : (sourcespan program) fallible =
             | _ -> [])
         | _ -> [])
        @ rec_errors
-    | EGenApp(func, typs, args, native, loc) ->
+    | EApp(func, Some typs, args, native, loc) ->
        let rec_errors = List.concat (List.map (fun e -> wf_E e env tyenv) (func :: args)) in
        (match func with
         | EId(funname, _) -> 
@@ -414,10 +414,8 @@ let desugar (p : sourcespan program) : sourcespan program =
        ELetRec(newbinds, helpE body, tag)
     | EIf(cond, thn, els, tag) ->
        EIf(helpE cond, helpE thn, helpE els, tag)
-    | EApp(name, args, native, tag) ->
-       EApp(helpE name, List.map helpE args, native, tag)
-    | EGenApp(name, typs, args, native, tag) ->
-       EGenApp(helpE name, typs, List.map helpE args, native, tag)
+    | EApp(name, typs, args, native, tag) ->
+       EApp(helpE name, typs, List.map helpE args, native, tag)
     | ELambda(binds, body, tag) ->
        let expandBind bind =
          match bind with
@@ -486,24 +484,24 @@ let rename_and_tag (p : tag program) : tag program =
           raise (InternalCompilerError(sprintf "Could not find %s in env: <%s>" name (ExtString.String.join ", " (env_keys env)))))
     (* As a special case, if you see an EApp to a Native function by name, don't rename it --
        that name comes from assembly and should not be modified! *)
-    | EApp(EId _ as func, args, Native, tag) ->
-       EApp(func, List.map (helpE env) args, Native, tag)
-    | EApp(func, args, native, tag) ->
+    | EApp(EId _ as func, None, args, Native, tag) ->
+       EApp(func, None, List.map (helpE env) args, Native, tag)
+    | EApp(func, None, args, native, tag) ->
        let func = helpE env func in
        let call_type =
          match func with
          | EId(name, _) ->
             (match StringMap.find_opt name env with None -> Snake | Some (_, Some ct) -> ct | Some _ -> Snake)
          | _ -> Snake in
-       EApp(func, List.map (helpE env) args, call_type, tag)
-    | EGenApp(func, tyargs, args, native, tag) ->
+       EApp(func, None, List.map (helpE env) args, call_type, tag)
+    | EApp(func, Some tyargs, args, native, tag) ->
        let func = helpE env func in
        let call_type =
          match func with
          | EId(name, _) ->
             (match StringMap.find_opt name env with None -> Snake | Some (_, Some ct) -> ct | Some _ -> Snake)
          | _ -> Snake in
-       EGenApp(func, tyargs, List.map (helpE env) args, call_type, tag)
+       EApp(func, Some tyargs, List.map (helpE env) args, call_type, tag)
     | ELet(binds, body, tag) ->
        let (binds', env') = helpBG env binds in
        let body' = helpE env' body in
@@ -584,7 +582,7 @@ let anf (p : tag program) : unit aprogram =
        (CLambda(List.map processBind args, helpA body, ()), [])
     | ELet((BTuple(binds, _), exp, _)::rest, body, pos) ->
        raise (InternalCompilerError("Tuple bindings should have been desugared away"))
-    | EApp(func, args, native, _) ->
+    | EApp(func, _, args, native, _) ->
        let (func_ans, func_setup) = helpI func in
        let (new_args, new_setup) = List.split (List.map helpI args) in
        (CApp(func_ans, new_args, native, ()), func_setup @ List.concat new_setup)
@@ -649,12 +647,7 @@ let anf (p : tag program) : unit aprogram =
        let tmp = sprintf "if_%d" tag in
        let (cond_imm, cond_setup) = helpI cond in
        (ImmId(tmp, ()), cond_setup @ [BLet (tmp, CIf(cond_imm, helpA _then, helpA _else, ()))])
-    | EApp(func, args, native, tag) ->
-       let tmp = sprintf "app_%d" tag in
-       let (new_func, func_setup) = helpI func in
-       let (new_args, new_setup) = List.split (List.map helpI args) in
-       (ImmId(tmp, ()), func_setup @ (List.concat new_setup) @ [BLet (tmp, CApp(new_func, new_args, native, ()))])
-    | EGenApp(func, _, args, native, tag) ->
+    | EApp(func, _, args, native, tag) ->
        let tmp = sprintf "app_%d" tag in
        let (new_func, func_setup) = helpI func in
        let (new_args, new_setup) = List.split (List.map helpI args) in
@@ -849,7 +842,7 @@ let add_native_lambdas (p : sourcespan program) =
                                              name (string_of_scheme scheme))) in
     let argnames = List.init arity (fun i -> sprintf "%s_arg_%d" name i) in
     [DFun(name, List.map (fun name -> BName(name, false, TyBlank dummy_span, dummy_span)) argnames, scheme,
-         EApp(EId(name, dummy_span), List.map (fun name -> EId(name, dummy_span)) argnames, Native, dummy_span),
+         EApp(EId(name, dummy_span), None, List.map (fun name -> EId(name, dummy_span)) argnames, Native, dummy_span),
       dummy_span)] in
   match p with
   | Program(tydecls, declss, body, tag) ->

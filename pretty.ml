@@ -137,9 +137,9 @@ and string_of_expr_with (depth : int) (print_a : 'a -> string) (e : 'a expr) : s
              (string_of_expr thn)
              (string_of_expr els)
              (print_a a)
-  | EApp(func, args, call_type, a) ->
+  | EApp(func, None, args, call_type, a) ->
      sprintf "(%s%s(%s))%s" (string_of_call_type call_type) (string_of_expr func) (ExtString.String.join ", " (List.map string_of_expr args)) (print_a a)
-  | EGenApp(func, tyargs, args, call_type, a) ->
+  | EApp(func, Some tyargs, args, call_type, a) ->
      sprintf "(%s%s<%s>(%s))%s" (string_of_call_type call_type) (string_of_expr func)
        (ExtString.String.join ", " (List.map string_of_typ tyargs))
        (ExtString.String.join ", " (List.map string_of_expr args)) (print_a a)
@@ -387,15 +387,15 @@ let rec format_expr (fmt : Format.formatter) (print_a : 'a -> string) (e : 'a ex
      open_label fmt "EIf" (print_a a);
      help cond; print_comma_sep fmt; help thn; print_comma_sep fmt; help els;
      close_paren fmt
-  | EApp(func, args, call_type, a) ->
+  | EApp(func, None, args, call_type, a) ->
      open_label fmt "EApp" (print_a a);
      pp_print_string fmt (string_of_call_type call_type);
      help func;
      print_comma_sep fmt;
      print_list fmt (fun fmt -> format_expr fmt print_a) args print_comma_sep;
      close_paren fmt
-  | EGenApp(func, tyargs, args, call_type, a) ->
-     open_label fmt "EGenApp" (print_a a);
+  | EApp(func, Some tyargs, args, call_type, a) ->
+     open_label fmt "EApp" (print_a a);
      pp_print_string fmt (string_of_call_type call_type);
      help func; pp_print_string fmt "<";
      print_list fmt (fun fmt -> format_typ fmt print_a) tyargs print_comma_sep;

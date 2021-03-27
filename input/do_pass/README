@@ -11,6 +11,7 @@ Tests should come in groups of related files:
   * "heap" followed by an integer to run the program with the given heap size (in words)
 - someTest.args: the command line arguments to use when running the program
   * note that if this file exists, the "heap" option above is ignored
+- someTest.in: the (optional) input to your program
 - someTest.out: the (optional) expected output of your program
 
 The .out file's contents will be treated as a substring to check for: if the file is missing,

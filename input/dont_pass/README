@@ -11,6 +11,7 @@ Tests should come in groups of related files:
   * "heap" followed by an integer to run the program with the given heap size (in words)
 - someTest.args: the command line arguments to use when running the program
   * note that if this file exists, the "heap" option above is ignored
+- someTest.in: the (optional) input to your program
 
 This will test that the program is *supposed* to run, but currently does not.
 (Ideally, when your compiler works perfectly, this directory should be empty.  For now, it's better

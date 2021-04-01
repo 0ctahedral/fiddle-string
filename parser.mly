@@ -119,15 +119,19 @@ binop_operand :
   | LPARENNOSPACE expr COLON typ RPAREN { EAnnot($2, $4, full_span()) }
   | LPARENSPACE expr COLON typ RPAREN { EAnnot($2, $4, full_span()) }
   // Lambdas
-  | LPARENNOSPACE LAMBDA LPARENNOSPACE binds RPAREN COLON expr RPAREN { ELambda($4, $7, full_span()) }
-  | LPARENNOSPACE LAMBDA LPARENSPACE binds RPAREN COLON expr RPAREN { ELambda($4, $7, full_span()) }
-  | LPARENNOSPACE LAMBDA COLON expr RPAREN { ELambda([], $4, full_span()) }
-  | LPARENSPACE LAMBDA LPARENNOSPACE binds RPAREN COLON expr RPAREN { ELambda($4, $7, full_span()) }
-  | LPARENSPACE LAMBDA LPARENSPACE binds RPAREN COLON expr RPAREN { ELambda($4, $7, full_span()) }
-  | LPARENSPACE LAMBDA COLON expr RPAREN { ELambda([], $4, full_span()) }
+  | LPARENNOSPACE LAMBDA opttyids LPARENNOSPACE binds RPAREN COLON expr RPAREN { ELambda($3, $5, $8, full_span()) }
+  | LPARENNOSPACE LAMBDA opttyids LPARENSPACE binds RPAREN COLON expr RPAREN { ELambda($3, $5, $8, full_span()) }
+  | LPARENNOSPACE LAMBDA opttyids COLON expr RPAREN { ELambda($3, [], $5, full_span()) }
+  | LPARENSPACE LAMBDA opttyids LPARENNOSPACE binds RPAREN COLON expr RPAREN { ELambda($3, $5, $8, full_span()) }
+  | LPARENSPACE LAMBDA opttyids LPARENSPACE binds RPAREN COLON expr RPAREN { ELambda($3, $5, $8, full_span()) }
+  | LPARENSPACE LAMBDA opttyids COLON expr RPAREN { ELambda($3, [], $5, full_span()) }
   // Simple cases
   | const { $1 }
   | id { $1 }
+
+opttyids :
+  | { None }
+  | LESSNOSPACE tyids GREATER { Some $2 }
 
 decl :
   | DEF ID LPARENNOSPACE RPAREN COLON expr

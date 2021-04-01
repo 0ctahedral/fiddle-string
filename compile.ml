@@ -202,7 +202,7 @@ let is_well_formed (p : sourcespan program) : (sourcespan program) fallible =
        let rhs_problems = List.map (fun (_, rhs, _) -> wf_E rhs new_env tyenv) binds in
        let body_problems = wf_E body new_env tyenv in
        nonfun_errs @ dupeIds @ bind_errs @ binding_errs @ (List.flatten rhs_problems) @ body_problems
-    | ELambda(binds, body, _) ->
+    | ELambda(_, binds, body, _) ->
        let rec dupe x args =
          match args with
          | [] -> None
@@ -362,7 +362,9 @@ let desugar (p : sourcespan program) : sourcespan program =
          | _ -> (a, []) in
        let (newargs, argbinds) = List.split (List.map helpArg args) in
        let newbody = ELet(List.flatten argbinds, body, tag) in
-       (BName(name, false, TyBlank(get_tag_S typ), tag), ELambda(newargs, helpE newbody, tag), tag)
+       let tyargs = match typ with
+         | SForall(args, _, _) -> Some args in
+       (BName(name, false, TyBlank(get_tag_S typ), tag), ELambda(tyargs, newargs, helpE newbody, tag), tag)
   and helpBE bind =
     let (b, e, btag) = bind in
     let e = helpE e in
@@ -416,7 +418,7 @@ let desugar (p : sourcespan program) : sourcespan program =
        EIf(helpE cond, helpE thn, helpE els, tag)
     | EApp(name, typs, args, native, tag) ->
        EApp(helpE name, typs, List.map helpE args, native, tag)
-    | ELambda(binds, body, tag) ->
+    | ELambda(tyargs, binds, body, tag) ->
        let expandBind bind =
          match bind with
          | BTuple(_, btag) ->
@@ -426,7 +428,7 @@ let desugar (p : sourcespan program) : sourcespan program =
          | _ -> (bind, []) in
        let (params, newbinds) = List.split (List.map expandBind binds) in
        let newbody = List.fold_right (fun binds body -> ELet(binds, body, tag)) newbinds (helpE body) in
-       ELambda(params, newbody, tag)
+       ELambda(tyargs, params, newbody, tag)
 
   in helpP p
 ;;
@@ -506,9 +508,9 @@ let rename_and_tag (p : tag program) : tag program =
        let (binds', env') = helpBG env binds in
        let body' = helpE env' body in
        ELet(binds', body', tag)
-    | ELambda(args, body, tag) ->
+    | ELambda(tyargs, args, body, tag) ->
        let (newargs, env') = helpBS env args in
-       ELambda(newargs, helpE env' body, tag)
+       ELambda(tyargs, newargs, helpE env' body, tag)
     | ELetRec(bindexps, body, tag) ->
        let env' = List.fold_left (fun env (b, _, _) -> snd (helpB env b)) env bindexps in
        let (binds', env') = helpBG env' bindexps in
@@ -573,7 +575,7 @@ let anf (p : tag program) : unit aprogram =
        let (new_binds, new_setup) = List.split new_binds_setup in
        let (body_ans, body_setup) = helpC body in
        (body_ans, (BLetRec (List.combine names new_binds)) :: body_setup)
-    | ELambda(args, body, _) ->
+    | ELambda(_, args, body, _) ->
        let processBind bind =
          match bind with
          | BName(name, _, _, _) -> name
@@ -671,7 +673,7 @@ let anf (p : tag program) : unit aprogram =
                         @ [BLetRec (List.combine names new_binds)]
                         @ body_setup
                         @ [BLet(tmp, body_ans)])
-    | ELambda(args, body, tag) ->
+    | ELambda(_, args, body, tag) ->
        let tmp = sprintf "lam_%d" tag in
        let processBind bind =
          match bind with

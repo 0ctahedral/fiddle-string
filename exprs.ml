@@ -69,7 +69,7 @@ and 'a expr =
   | EId of string * 'a
   | EApp of 'a expr * 'a typ list option * 'a expr list * call_type * 'a
   | EAnnot of 'a expr * 'a typ * 'a
-  | ELambda of 'a bind list * 'a expr * 'a
+  | ELambda of string list option * 'a bind list * 'a expr * 'a
   | ELetRec of 'a binding list * 'a expr * 'a
 
 type 'a decl =
@@ -146,7 +146,7 @@ let get_tag_E e = match e with
   | EGetItem(_, _, _, t) -> t
   | ESetItem(_, _, _, _, t) -> t
   | ESeq(_, _, t) -> t
-  | ELambda(_, _, t) -> t
+  | ELambda(_, _, _, t) -> t
 ;;
 let get_tag_D d = match d with
   | DFun(_, _, _, _, t) -> t
@@ -201,9 +201,9 @@ let rec map_tag_E (f : 'a -> 'b) (e : 'a expr) =
   | EApp(func, tyargs, args, native, a) ->
      let tag_app = f a in
      EApp(map_tag_E f func, map_opt (List.map (map_tag_T f)) tyargs, List.map (map_tag_E f) args, native, tag_app)
-  | ELambda(binds, body, a) ->
+  | ELambda(opttyids, binds, body, a) ->
      let tag_lam = f a in
-     ELambda(List.map (map_tag_B f) binds, map_tag_E f body, tag_lam)
+     ELambda(opttyids, List.map (map_tag_B f) binds, map_tag_E f body, tag_lam)
 and map_tag_Ts f ts = List.map (map_tag_T f) ts
 and map_tag_B (f : 'a -> 'b) b =
   match b with
@@ -305,8 +305,8 @@ and untagE e =
      EApp(untagE func, map_opt untagTs tyargs, List.map untagE args, native, ())
   | ELetRec(binds, body, _) ->
      ELetRec(List.map (fun (b, e, _) -> (untagB b, untagE e, ())) binds, untagE body, ())
-  | ELambda(binds, body, _) ->
-     ELambda(List.map untagB binds, untagE body, ())
+  | ELambda(opttyids, binds, body, _) ->
+     ELambda(opttyids, List.map untagB binds, untagE body, ())
 and untagB b =
   match b with
   | BBlank(typ, _) -> BBlank(untagT typ, ())

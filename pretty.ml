@@ -147,10 +147,15 @@ and string_of_expr_with (depth : int) (print_a : 'a -> string) (e : 'a expr) : s
      let binds_strs = List.map (string_of_binding_with (depth - 1) print_a) binds in
      let binds_str = List.fold_left (^) "" (intersperse binds_strs ", ") in
      sprintf "(let-rec %s in %s)%s" binds_str (string_of_expr body) (print_a a)
-  | ELambda(binds, body, a) ->
+  | ELambda(None, binds, body, a) ->
      let binds_strs = List.map string_of_bind binds in
      let binds_str = List.fold_left (^) "" (intersperse binds_strs ", ") in
      sprintf "(lam(%s) %s)%s" binds_str (string_of_expr body) (print_a a)
+  | ELambda(Some tyargs, binds, body, a) ->
+     let tyargs_str = (ExtString.String.join ", " tyargs) in
+     let binds_strs = List.map string_of_bind binds in
+     let binds_str = List.fold_left (^) "" (intersperse binds_strs ", ") in
+     sprintf "(lam<%s>(%s) %s)%s" tyargs_str binds_str (string_of_expr body) (print_a a)
 
 let string_of_expr (e : 'a expr) : string =
   string_of_expr_with 1000 (fun _ -> "") e
@@ -429,9 +434,18 @@ let rec format_expr (fmt : Format.formatter) (print_a : 'a -> string) (e : 'a ex
      print_comma_sep fmt;
      help body;
      close_paren fmt
-  | ELambda(binds, body, a) ->
+  | ELambda(None, binds, body, a) ->
      open_label fmt "ELam" (print_a a);
      open_paren fmt; print_list fmt (fun fmt -> format_bind fmt print_a) binds print_comma_sep; close_paren fmt;
+     pp_print_string fmt ":"; pp_print_space fmt ();
+     help body;
+     close_paren fmt
+  | ELambda(Some tyargs, binds, body, a) ->
+     open_label fmt "ELam" (print_a a);
+     open_paren fmt; pp_print_string fmt "<";
+     print_list fmt pp_print_string tyargs print_comma_sep;
+     pp_print_string fmt ">";
+     print_list fmt (fun fmt -> format_bind fmt print_a) binds print_comma_sep; close_paren fmt;
      pp_print_string fmt ":"; pp_print_space fmt ();
      help body;
      close_paren fmt

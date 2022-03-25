@@ -23,17 +23,17 @@ let tparse name program expected = name>::fun _ ->
 let teq name actual expected = name>::fun _ ->
   assert_equal expected actual ~printer:(fun s -> s);;
 
-let tfvs name program expected = name>::
-  (fun _ ->
-    let ast = parse_string name program in
-    let anfed = anf (tag ast) in
-    let vars = free_vars_P anfed [] in
-    let c = Stdlib.compare in
-    let str_list_print strs = "[" ^ (ExtString.String.join ", " strs) ^ "]" in
-    assert_equal (List.sort c vars) (List.sort c expected) ~printer:str_list_print)
-;;
+(* let tfvs name program expected = name>:: *)
+(*   (fun _ -> *)
+(*     let ast = parse_string name program in *)
+(*     let anfed = anf (tag ast) in *)
+(*     let vars = free_vars_P anfed [] in *)
+(*     let c = Stdlib.compare in *)
+(*     let str_list_print strs = "[" ^ (ExtString.String.join ", " strs) ^ "]" in *)
+(*     assert_equal (List.sort c vars) (List.sort c expected) ~printer:str_list_print) *)
+(* ;; *)
 
-let builtins_size = 4 (* arity + 0 vars + codeptr + padding *) * (List.length TypeCheck.native_fun_bindings)
+let builtins_size = 4 (* arity + 0 vars + codeptr + padding *) * 1 (* TODO FIXME (List.length Compile.native_fun_bindings) *)
 
 let pair_tests = [
   t "tup1" "let t = (4, (5, 6)) in

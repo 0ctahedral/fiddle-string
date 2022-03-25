@@ -53,51 +53,22 @@ let from_bindings bindings =
   List.fold_left (fun acc (name, info) -> StringMap.add name info acc) StringMap.empty bindings
 ;;
 
-let prim1_name p = match p with
-  | Add1 -> "p1:add1"
-  | Sub1 -> "p1:sub1"
-  | Print -> "p1:print"
-  | IsBool -> "p1:isBool"
-  | IsNum -> "p1:isNum"
-  | IsTuple -> "p1:isTuple"
-  | Not -> "p1:not"
-  | PrintStack -> "p1:printStack" 
-let prim2_name p = match p with
-  | Plus -> "p2:Plus"
-  | Minus -> "p2:Minus"
-  | Times -> "p2:Times"
-  | And -> "p2:And"
-  | Or -> "p2:Or"
-  | Greater -> "p2:Greater"
-  | GreaterEq -> "p2:GreaterEq"
-  | Less -> "p2:Less"
-  | LessEq -> "p2:LessEq"
-  | Eq -> "p2:Eq"
-  | CheckSize -> "p2:CheckSize"
+let prim_bindings : (call_type * int) envt = from_bindings [
+  (* Add descriptions of all the primops here *)
+  (* e.g. ("prim1:Add1", (Prim, 1)) *)
+]
+let native_fun_bindings : (call_type * int) envt = from_bindings [
+  (* Add any functions that are defined by the runtime, here *)
+  (* e.g. ("equal", (Native, 2)) *)
+]
+let initial_fun_env : (call_type * int) envt =
+  StringMap.union (fun key _ _ -> raise (InternalCompilerError (sprintf "%s is defined as both a prim and a native fun" key)))
+                  prim_bindings
+                  native_fun_bindings
 
-(* CheckSize is intentionally excluded *)
-let initial_fun_env : (call_type * int) envt = from_bindings [
-    (prim1_name Add1, (Prim, 1));
-    (prim1_name Sub1, (Prim, 1));
-    (prim1_name IsBool, (Prim, 1));
-    (prim1_name IsNum, (Prim, 1));
-    (prim1_name IsTuple, (Prim, 1));
-    (prim1_name Not, (Prim, 1));
-    (prim1_name Print, (Native, 1));
-    (prim1_name PrintStack, (Native, 1));
-    (prim2_name Plus, (Prim, 2));
-    (prim2_name Minus, (Prim, 2));
-    (prim2_name Times, (Prim, 2));
-    (prim2_name And, (Prim, 2));
-    (prim2_name Or, (Prim, 2));
-    (prim2_name Greater, (Prim, 2));
-    (prim2_name GreaterEq, (Prim, 2));
-    (prim2_name Less, (Prim, 2));
-    (prim2_name LessEq, (Prim, 2));
-    (prim2_name Eq, (Prim, 2));
-    ("equal", (Native, 2));
-    ("input", (Native, 0))
-  ]
+let initial_val_env : sourcespan envt = from_bindings [
+  (* create an initial environment of any globally defined values here *)
+]
 
 let initial_val_env = from_bindings [];;
 
@@ -683,51 +654,59 @@ let anf (p : tag program) : unit aprogram =
   helpP p
 ;;
 
-
-let free_vars_E (e : 'a aexpr) rec_binds : string list =
-  let rec helpA (bound : string list) (e : 'a aexpr) : string list =
-    match e with
-    | ASeq(e1, e2, _) -> helpC bound e1 @ helpA bound e2
-    | ALet(name, binding, body, _) ->
-     (helpC bound binding) (* all the free variables in the binding, plus *)
-     (* all the free variables in the body, except the name itself *)
-     @ (helpA (name :: bound) body)
-    | ALetRec(bindings, body, _) ->
-       let names = List.map fst bindings in
-       let new_bound = (names @ bound) in
-        (helpA new_bound body) @ List.flatten (List.map (fun binding -> helpC new_bound (snd binding)) bindings)
-    | ACExpr c -> helpC bound c
-  and helpC (bound : string list) (e : 'a cexpr) : string list =
-    match e with
-    | CLambda(args, body, _) ->
-      helpA (args @ bound) body
-    | CIf(cond, thn, els, _) ->
-      helpI bound cond @ helpA bound thn @ helpA bound els
-    | CPrim1(_, arg, _) -> helpI bound arg
-    | CPrim2(_, left, right, _) -> helpI bound left @ helpI bound right
-    (* This special case notices when you are calling a Native function by name,
-       and ignores that name as a "free variable" at the level of Snake variable names *)
-    | CApp(ImmId _, args, Native, _) ->
-       (List.flatten (List.map (fun arg -> helpI bound arg) args))
-    | CApp(fn, args, _, _) ->
-      (helpI bound fn) @ (List.flatten (List.map (fun arg -> helpI bound arg) args))
-    | CTuple(vals, _) -> List.flatten (List.map (fun v -> helpI bound v) vals)
-    | CGetItem(tup, _, _) -> helpI bound tup
-    | CSetItem(tup, _, rhs, _) -> helpI bound tup @ helpI bound rhs
-    | CImmExpr i -> helpI bound i
-  and helpI (bound : string list) (e : 'a immexpr) : string list =
-    match e with
-    | ImmId(name, _) ->
-      (* a name is free if it is not bound *)
-      if List.mem name bound then [] else [name]
-    | _ -> []
-  in List.sort_uniq String.compare (helpA rec_binds e)
-;;
-let free_vars_P (p : 'a aprogram) rec_binds : string list =
-  match p with
-  | AProgram(body, _) -> free_vars_E body rec_binds
+let free_vars (e: 'a aexpr) : string list =
+  raise (NotYetImplemented "Implement free_vars for expressions")
 ;;
 
+(* TODO WHAT? *)
+(* let free_vars_E (e : 'a aexpr) rec_binds : string list = *)
+(*   let rec helpA (bound : string list) (e : 'a aexpr) : string list = *)
+(*     match e with *)
+(*     | ASeq(e1, e2, _) -> helpC bound e1 @ helpA bound e2 *)
+(*     | ALet(name, binding, body, _) -> *)
+(*      (helpC bound binding) (1* all the free variables in the binding, plus *1) *)
+(*      (1* all the free variables in the body, except the name itself *1) *)
+(*      @ (helpA (name :: bound) body) *)
+(*     | ALetRec(bindings, body, _) -> *)
+(*        let names = List.map fst bindings in *)
+(*        let new_bound = (names @ bound) in *)
+(*         (helpA new_bound body) @ List.flatten (List.map (fun binding -> helpC new_bound (snd binding)) bindings) *)
+(*     | ACExpr c -> helpC bound c *)
+(*   and helpC (bound : string list) (e : 'a cexpr) : string list = *)
+(*     match e with *)
+(*     | CLambda(args, body, _) -> *)
+(*       helpA (args @ bound) body *)
+(*     | CIf(cond, thn, els, _) -> *)
+(*       helpI bound cond @ helpA bound thn @ helpA bound els *)
+(*     | CPrim1(_, arg, _) -> helpI bound arg *)
+(*     | CPrim2(_, left, right, _) -> helpI bound left @ helpI bound right *)
+(*     (1* This special case notices when you are calling a Native function by name, *)
+(*        and ignores that name as a "free variable" at the level of Snake variable names *1) *)
+(*     | CApp(ImmId _, args, Native, _) -> *)
+(*        (List.flatten (List.map (fun arg -> helpI bound arg) args)) *)
+(*     | CApp(fn, args, _, _) -> *)
+(*       (helpI bound fn) @ (List.flatten (List.map (fun arg -> helpI bound arg) args)) *)
+(*     | CTuple(vals, _) -> List.flatten (List.map (fun v -> helpI bound v) vals) *)
+(*     | CGetItem(tup, _, _) -> helpI bound tup *)
+(*     | CSetItem(tup, _, rhs, _) -> helpI bound tup @ helpI bound rhs *)
+(*     | CImmExpr i -> helpI bound i *)
+(*   and helpI (bound : string list) (e : 'a immexpr) : string list = *)
+(*     match e with *)
+(*     | ImmId(name, _) -> *)
+(*       (1* a name is free if it is not bound *1) *)
+(*       if List.mem name bound then [] else [name] *)
+(*     | _ -> [] *)
+(*   in List.sort_uniq String.compare (helpA rec_binds e) *)
+(* ;; *)
+(* let free_vars_P (p : 'a aprogram) rec_binds : string list = *)
+(*   match p with *)
+(*   | AProgram(body, _) -> free_vars_E body rec_binds *)
+(* ;; *)
+
+(* IMPLEMENT THIS FROM YOUR PREVIOUS ASSIGNMENT *)
+let naive_stack_allocation (prog: tag aprogram) : tag aprogram * arg envt =
+  raise (NotYetImplemented "Implement stack allocation for egg-eater")
+;;
 
 let count_vars e =
   let rec helpA e =
@@ -820,20 +799,15 @@ and call (closure : arg) args =
    as in the rest of Fer-De-Lance, but the Native EApps will do the work of actually
    native_calling the runtime-provided functions. *)
 let add_native_lambdas (p : sourcespan program) =
-  let wrap_native (name, (scheme, _)) =
-    let arity = match scheme with
-      | SForall(_, TyArr(args, _, _), _) -> List.length args
-      | _ -> raise (InternalCompilerError (sprintf "Native function %s doesn't have SForall scheme: %s"
-                                             name (string_of_scheme scheme))) in
+  let wrap_native name arity =
     let argnames = List.init arity (fun i -> sprintf "%s_arg_%d" name i) in
-    [DFun(name, List.map (fun name -> BName(name, false, TyBlank dummy_span, dummy_span)) argnames, scheme,
-         EApp(EId(name, dummy_span), None, List.map (fun name -> EId(name, dummy_span)) argnames, Native, dummy_span),
-      dummy_span)] in
+    [DFun(name, List.map (fun name -> BName(name, false, dummy_span)) argnames, EApp(EId(name, dummy_span), List.map(fun name -> EId(name, dummy_span)) argnames, Native, dummy_span), dummy_span)]
+  in
   match p with
-  | Program(tydecls, declss, body, tag) ->
-     Program(tydecls, (List.map wrap_native TypeCheck.native_fun_bindings) @ declss, body, tag)
+  | Program(declss, body, tag) ->
+     Program((StringMap.fold (fun name (_, arity) declss -> (wrap_native name arity)::declss) native_fun_bindings declss), body, tag)
 
-let compile_prog (was_typechecked : bool) anfed =
+let compile_prog (anfed, env) =
   let prelude =
     "section .text
 extern error
@@ -881,9 +855,9 @@ err_call_arity_err:%s
                        (to_asm (native_call (Label "error") [Const(err_CALL_ARITY_ERR); Reg(scratch_reg)]))
   in
   match anfed with
-  | AProgram([], body, _) ->
+  | AProgram(body, _) ->
   (* $heap and $size are mock parameter names, just so that compile_fun knows our_code_starts_here takes in 2 parameters *)
-     let (prologue, comp_main, epilogue) = compile_fun "?our_code_starts_here_entry" ["$heap"; "$size"] body StringMap.empty in
+     let (prologue, comp_main, epilogue) = compile_fun "?our_code_starts_here_entry" ["$heap"; "$size"] body env in
      let heap_start =
        [
          ILineComment("heap start");
@@ -903,22 +877,20 @@ err_call_arity_err:%s
          ] in
      let main = (prologue @ heap_start @ comp_main @ epilogue) in
      sprintf "%s%s%s%s\n" prelude (to_asm set_stack_bottom) (to_asm main) suffix
-  | AProgram(_, _, _) -> raise (InternalCompilerError "ANFed program should not have any decls remaining")
 ;;
 
 let run_if should_run f =
   if should_run then f else no_op_phase
 ;;
 
-let compile_to_string ?no_builtins:(no_builtins=false) (should_infer : bool) (should_check : bool) (prog : sourcespan program pipeline) : string pipeline =
+let compile_to_string ?no_builtins:(no_builtins=false) (prog : sourcespan program pipeline) : string pipeline =
   prog
   |> (add_err_phase well_formed is_well_formed)
-  (* |> (run_if should_infer (add_err_phase type_inferred type_synth)) *)
-  |> (run_if should_check (add_err_phase type_checked type_check))
   |> (run_if (not no_builtins) (add_phase add_natives add_native_lambdas))
   |> (add_phase desugared desugar)
   |> (add_phase tagged tag)
   |> (add_phase renamed rename_and_tag)
   |> (add_phase anfed (fun p -> atag (anf p)))
-  |> (add_phase result (compile_prog should_check))
+  |> (add_phase locate_bindings naive_stack_allocation)
+  |> (add_phase result compile_prog)
 ;;

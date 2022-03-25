@@ -4,6 +4,9 @@ open Errors
 open Pretty
 open Assembly
 
+module StringMap = Map.Make(String);;
+type 'a envt = 'a StringMap.t;;
+
 (* There are lots of ways to work with pipelines of functions that "can fail
    at any point". They all have various drawbacks, though.  See
    http://keleshev.com/composable-error-handling-in-ocaml for a decent writeup
@@ -25,7 +28,7 @@ type phase =
   | AddedNatives of sourcespan program
   | Tagged of tag program
   | ANFed of tag aprogram
-  | Located of tag aprogram * (string * arg) list
+  | Located of tag aprogram * arg envt
   | Result of string
 ;;
 (* These functions simply apply a phase constructor, because OCaml
@@ -131,7 +134,7 @@ let print_trace (trace : phase list) : string list =
     | Located(p, e) ->
       string_of_aprogram_with 1000 (fun tag -> sprintf "@%d" tag) p
       ^ "\nEnv:\n\t"
-      ^ (List.fold_left (^) "" (intersperse (List.map (fun (name, arg) -> name ^ "=>" ^ (arg_to_asm arg)) e) "\n\t")) 
+      ^ (List.fold_left (^) "" (intersperse (List.map (fun (name, arg) -> name ^ "=>" ^ (arg_to_asm arg)) (StringMap.bindings e)) "\n\t")) 
     | Result s -> s in
   List.mapi (fun n p -> sprintf "Phase %d (%s):\n%s" n (phase_name p) (string_of_phase p)) (List.rev trace)
 ;;

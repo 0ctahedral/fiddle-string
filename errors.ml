@@ -5,7 +5,6 @@ open Pretty
 (* TODO: Define any additional exceptions you want *)
 exception ParseError of string (* parse-error message *)
 exception UnboundId of string * sourcespan (* name, where used *)
-exception UnboundTyId of string * sourcespan (* name, where used *)
 exception UnboundFun of string * sourcespan (* name of fun, where used *)
 exception ShadowId of string * sourcespan * sourcespan (* name, where used, where defined *)
 exception DuplicateId of string * sourcespan * sourcespan (* name, where used, where defined *)
@@ -15,21 +14,9 @@ exception Arity of int * int * sourcespan (* intended arity, actual arity, where
 exception NotYetImplemented of string (* TODO: Message to show *)
 exception Unsupported of string * sourcespan
 exception InternalCompilerError of string (* Major failure: message to show *)
-exception OccursCheck of string * sourcespan typ * sourcespan
 exception LetRecNonFunction of sourcespan bind * sourcespan (* name binding, where defined *)
-
-
-type reason =
-  | InferExp of sourcespan expr
-  | Message of string
-  | Unify of string * sourcespan typ * sourcespan typ
-  | Instantiate of string * sourcespan scheme
-                                     
-exception NoType of string * sourcespan (* name, where defined *)
-exception ShouldBeFunction of string * sourcespan * sourcespan scheme (* name, where defined, actual typ *)
-exception TypeMismatch of sourcespan * sourcespan typ * sourcespan typ * reason list (* where, expected, actual *)
+exception ShouldBeFunction of string * sourcespan (* name, where defined, actual typ *)
 exception DeclArity of string * int * int * sourcespan (* name, num args, num types, where defined *)
-exception BadTypeApp of string * sourcespan * int * int (* fn name, where called, expected #tyargs, actual *)
 
 
   
@@ -45,12 +32,8 @@ let print_errors (exns : exn list) : string list =
          sprintf "Unsupported: %s at <%s>" msg (string_of_sourcespan loc)
       | InternalCompilerError msg ->
          "Internal Compiler Error: " ^ msg
-      | OccursCheck(tyvar, t, loc) ->
-         sprintf "Infinite types: '%s occurs in %s at <%s>" tyvar (string_of_typ t) (string_of_sourcespan loc)
       | UnboundId(x, loc) ->
          sprintf "The identifier %s, used at <%s>, is not in scope" x (string_of_sourcespan loc)
-      | UnboundTyId(x, loc) ->
-         sprintf "The type name %s, used at <%s>, is not in scope" x (string_of_sourcespan loc)
       | UnboundFun(x, loc) ->
          sprintf "The function name %s, used at <%s>, is not in scope" x (string_of_sourcespan loc)
       | ShadowId(x, loc, existing) ->
@@ -68,34 +51,14 @@ let print_errors (exns : exn list) : string list =
       | Arity(expected, actual, loc) ->
          sprintf "The function called at <%s> expected an arity of %d, but received %d arguments"
                  (string_of_sourcespan loc) expected actual
-      | NoType(name, loc) ->
-         sprintf "The name %s at <%s> has no type defined" name (string_of_sourcespan loc)
-      | BadTypeApp(name, loc, expected, actual) ->
-         sprintf "The function %s, called at %s, expected %d type arguments but only %d types provided"
-           name (string_of_sourcespan loc) expected actual
       | DeclArity(name, num_args, num_types, loc) ->
          sprintf "The function %s, defined at %s, has %d arguments but only %d types provided"
                  name (string_of_sourcespan loc) num_args num_types
-      | ShouldBeFunction(name, loc, wanted) ->
-         sprintf "The function %s, at %s, should have function type %s" name (string_of_sourcespan loc) (string_of_scheme wanted)
+      | ShouldBeFunction(name, loc) ->
+         sprintf "The function %s, at %s, should be function" name (string_of_sourcespan loc)
       | LetRecNonFunction(bind, loc) ->
          sprintf "Binding error at %s: Let-rec expected a name binding to a lambda; got %s"
            (string_of_sourcespan loc) (string_of_bind bind)
-      | TypeMismatch(loc, expected, actual, []) ->
-          sprintf "Type error at %s: expected %s but got %s"
-            (string_of_sourcespan loc) (string_of_typ expected) (string_of_typ actual)
-      | TypeMismatch(loc, expected, actual, reasons) ->
-         let print_reason r =
-           match r with
-           | InferExp e -> sprintf "\ttrying to infer type for %s at %s"
-                             (string_of_expr e) (string_of_sourcespan (get_tag_E e))
-           | Message s -> "\t" ^ s
-           | Unify(s, t1, t2) -> sprintf "\ttrying to unify %s and %s (because %s)"
-                                   (string_of_typ t1) (string_of_typ t2) s
-           | Instantiate(name, scheme) -> sprintf "\ttrying to instantiate %s at %s" name (string_of_scheme scheme) in
-          sprintf "Type error at %s: expected %s but got %s, because\n%s"
-            (string_of_sourcespan loc) (string_of_typ expected) (string_of_typ actual)
-            (ExtString.String.join "\n" (List.map print_reason reasons))
       | _ ->
          sprintf "%s" (Printexc.to_string e)
     ) exns

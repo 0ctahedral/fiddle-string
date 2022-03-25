@@ -2,6 +2,7 @@ open Printf
 open Exprs
 open Errors
 open Pretty
+open Assembly
 
 (* There are lots of ways to work with pipelines of functions that "can fail
    at any point". They all have various drawbacks, though.  See
@@ -24,6 +25,7 @@ type phase =
   | AddedNatives of sourcespan program
   | Tagged of tag program
   | ANFed of tag aprogram
+  | Located of tag aprogram * (string * arg) list
   | Result of string
 ;;
 (* These functions simply apply a phase constructor, because OCaml
@@ -38,6 +40,7 @@ let type_inferred p = TypeInferred p
 let type_checked p = TypeChecked p
 let anfed p = ANFed p
 let add_natives p = AddedNatives p
+let locate_bindings(p, e) = Located(p, e)
 let result s = Result s
 ;;
 
@@ -112,6 +115,7 @@ let print_trace (trace : phase list) : string list =
     | TypeInferred _ -> "TypeInferred"
     | TypeChecked _ -> "TypeChecked"
     | ANFed _ -> "ANF'ed"
+    | Located _  -> "Located"
     | Result _ -> "Result" in
   let string_of_phase p = match p with
     | Source s -> s
@@ -124,6 +128,10 @@ let print_trace (trace : phase list) : string list =
     | TypeChecked p -> ast_of_program p
     | Tagged p -> string_of_program_with 1000 (fun tag -> sprintf "@%d" tag) p
     | ANFed p -> string_of_aprogram_with 1000 (fun tag -> sprintf "@%d" tag)  p
+    | Located(p, e) ->
+      string_of_aprogram_with 1000 (fun tag -> sprintf "@%d" tag) p
+      ^ "\nEnv:\n\t"
+      ^ (List.fold_left (^) "" (intersperse (List.map (fun (name, arg) -> name ^ "=>" ^ (arg_to_asm arg)) e) "\n\t")) 
     | Result s -> s in
   List.mapi (fun n p -> sprintf "Phase %d (%s):\n%s" n (phase_name p) (string_of_phase p)) (List.rev trace)
 ;;

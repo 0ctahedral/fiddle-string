@@ -20,9 +20,9 @@ let signed_int = dec_digit+ | ('-' dec_digit+)
 
 let ident = ['a'-'z' 'A'-'Z' '_']['a'-'z' 'A'-'Z' '0'-'9' '_']*
 
-let tyident = "'"['a'-'z' 'A'-'Z' '_']['a'-'z' 'A'-'Z' '0'-'9' '_']*
-
 let blank = [' ' '\t']+
+
+let tyident = "'"['a'-'z' 'A'-'Z' '_']['a'-'z' 'A'-'Z' '0'-'9' '_']*
 
 let space = [' ' '\t' '\n']+
 
@@ -37,7 +37,6 @@ rule token = parse
   | blank { token lexbuf }
   | '\n' { new_line lexbuf; token lexbuf }
   | signed_int as x { NUM (Int64.of_string x) }
-  | "->" { THINARROW }
   | ":=" { COLONEQ }
   | ":" { COLON }
   | "def" { DEF }
@@ -45,7 +44,6 @@ rule token = parse
   | "print" { PRINT }
   | "printStack" { PRINTSTACK }
   | "nil" { NIL }
-  | "type" { TYPE }
   | "true" { TRUE }
   | "false" { FALSE }
   | "istuple" { ISTUPLE }
@@ -60,21 +58,17 @@ rule token = parse
   | "else:" { ELSECOLON }
   | "let" { LET }
   | "in" { IN }
-  | "of" { OF }
   | "=" { EQUAL }
   | "," { COMMA }
   | "(" { LPARENNOSPACE }
   | ")" { RPAREN }
   | "[" { LBRACK }
   | "]" { RBRACK }
-  | "{" { LBRACE }
-  | "}" { RBRACE }
   | "+" { PLUS }
   | "-" { MINUS }
   | "*" { TIMES }
   | ":=" { COLONEQ }
   | "==" { EQEQ }
-  | "<" { LESSNOSPACE }
   | ">" { GREATER }
   | "<=" { LESSEQ }
   | ">=" { GREATEREQ }
@@ -86,7 +80,6 @@ rule token = parse
   | "end" { END }
   | "rec" { REC }
   | "shadow" { SHADOW }
-  | tyident as x { TYID (String.sub x 1 (String.length x - 1)) }
   | ident as x { if x = "_" then UNDERSCORE else ID x }
   | eof { EOF }
   | _ as c { failwith (sprintf "Unrecognized character: %c" c) }

@@ -10,7 +10,7 @@ type 'a envt = (string * 'a) list
 
 let print_env env how =
   debug_printf "Env is\n";
-  StringMap.iter (fun id bind -> debug_printf "  %s -> %s\n" id (how bind)) env;;
+  List.iter (fun (id, bind) -> debug_printf "  %s -> %s\n" id (how bind)) env;;
 
 
 let const_true       = HexConst(0xFFFFFFFFFFFFFFFFL)
@@ -47,6 +47,14 @@ let dummy_span = (Lexing.dummy_pos, Lexing.dummy_pos);;
 let first_six_args_registers = [RDI; RSI; RDX; RCX; R8; R9]
 let heap_reg = R15
 let scratch_reg = R11
+
+(* you can add any functions or data defined by the runtime here for future use *)
+let initial_val_env = [];;
+
+let prim_bindings = [];;
+let native_fun_bindings = [];;
+
+let initial_fun_env = prim_bindings @ native_fun_bindings;;
 
 (* You may find some of these helpers useful *)
 
@@ -105,8 +113,17 @@ let merge_envs list_env1 list_env2 =
   list_env1 @ list_env2
 ;;
 (* Combines two envts into one, preferring the first one *)
-let prepend env1 env2 = StringMap.union (fun _ a _ -> Some a) env1 env2
+let prepend env1 env2 =
+  let rec help env1 env2 =
+    match env1 with
+    | [] -> env2
+    | ((k, _) as fst)::rst ->
+      let rst_prepend = help rst env2 in
+      if List.mem_assoc k env2 then rst_prepend else fst::rst_prepend
+  in
+  help env1 env2
 ;;
+
 let env_keys e = List.map fst e;;
 
 (* Scope_info stores the location where something was defined,
@@ -160,7 +177,7 @@ let is_well_formed (p : sourcespan program) : (sourcespan program) fallible =
               else match find_opt env x with
                    | None -> []
                    | Some (existing, _, _) -> [ShadowId(x, xloc, existing)] in
-            let new_env = StringMap.add x (xloc, None, None) env in
+            let new_env = (x, (xloc, None, None))::env in
             let (newer_env, errs) = process_binds rest new_env in
             (newer_env, (shadow @ errs)) in
        let rec process_bindings bindings (env : scope_info envt) =
@@ -177,7 +194,7 @@ let is_well_formed (p : sourcespan program) : (sourcespan program) fallible =
        let rec_errors = List.concat (List.map (fun e -> wf_E e env) (func :: args)) in
        (match func with
         | EId(funname, _) -> 
-           (match (StringMap.find_opt funname env) with
+           (match (find_opt env funname) with
             | Some(_, _, Some arg_arity) ->
                let actual = List.length args in
                if actual != arg_arity then [Arity(arg_arity, actual, loc)] else []
@@ -212,10 +229,10 @@ let is_well_formed (p : sourcespan program) : (sourcespan program) fallible =
          | BName(x, allow_shadow, xloc)::rest ->
             let shadow =
               if allow_shadow then []
-              else match StringMap.find_opt x env with
+              else match (find_opt env x) with
                    | None -> []
                    | Some (existing, _, _) -> if xloc = existing then [] else [ShadowId(x, xloc, existing)] in
-            let new_env = StringMap.add x (xloc, None, None) env in
+            let new_env = (x, (xloc, None, None))::env in
             let (newer_env, errs) = process_binds rest new_env in
             (newer_env, (shadow @ errs)) in
 
@@ -282,27 +299,25 @@ let is_well_formed (p : sourcespan program) : (sourcespan program) fallible =
          match args with
          | [] -> env
          | BBlank _ :: rest -> arg_env rest env
-         | BName(name, _, loc)::rest -> StringMap.add name (loc, None, None) (arg_env rest env)
+         | BName(name, _, loc)::rest -> (name, (loc, None, None))::(arg_env rest env)
          | BTuple(binds, _)::rest -> arg_env (binds @ rest) env in
        (process_args args) @ (wf_E body (arg_env args env))
   and wf_G (g : sourcespan decl list) (env : scope_info envt) (tyenv : StringSet.t) =
     let add_funbind (env : scope_info envt) d =
       match d with
       | DFun(name, args, _, loc) ->
-         StringMap.add name (loc, Some (List.length args), Some (List.length args)) env in
+         (name, (loc, Some (List.length args), Some (List.length args)))::env in
     let env = List.fold_left add_funbind env g in
     let errs = List.concat (List.map (fun d -> wf_D d env tyenv) g) in
     (errs, env)
   in
   match p with
   | Program(decls, body, _) ->
-      (* TODO TODO TODO left off here, need to figure out initial_val_env, what do *)
      let initial_env = initial_val_env in
-     let initial_env = StringMap.fold
-                            (fun name (_, arg_count) env ->
-                              StringMap.add name (dummy_span, Some arg_count, Some arg_count) env)
-                            initial_fun_env
-                            initial_env in
+     let initial_env = List.fold_left
+                          (fun env (name, (_, arg_count)) -> (name, (dummy_span, Some arg_count, Some arg_count))::env)
+     initial_fun_env
+     initial_env in
      let rec find name (decls : 'a decl list) =
        match decls with
        | [] -> None
@@ -319,7 +334,7 @@ let is_well_formed (p : sourcespan program) : (sourcespan program) fallible =
      let initial_tyenv = StringSet.of_list ["Int"; "Bool"] in
      let help_G (env, exns) g =
        let (g_exns, funbinds) = wf_G g env initial_tyenv in
-       (StringMap.fold StringMap.add funbinds env, exns @ g_exns) in
+       (List.fold_left (fun xs x -> x::xs) env funbinds, exns @ g_exns) in
      let (env, exns) = List.fold_left help_G (initial_env, dupe_funbinds all_decls) decls in
      debug_printf "In wf_P: %s\n" (ExtString.String.join ", " (env_keys env));
      let exns = exns @ (wf_E body env)
@@ -432,19 +447,21 @@ let desugar (p : sourcespan program) : sourcespan program =
 
 (* ASSUMES desugaring is complete *)
 let rename_and_tag (p : tag program) : tag program =
-  let rec rename (env : (string * call_type option) envt) p =
+  let rec rename env p =
     match p with
-    | Program([], body, tag) ->
-       let initial_funenv = StringMap.mapi (fun name (ct, _) -> (name, Some ct)) initial_fun_env in
-       let initial_env = prepend env initial_funenv in
-       Program([], helpE initial_env body, tag)
-    | Program(_, _, _) -> raise (InternalCompilerError "Renaming program should have been desugared already")
-  and helpB (env : (string * call_type option) envt) b =
+    | Program(decls, body, tag) ->
+       Program(List.map (fun group -> List.map (helpD env) group) decls, helpE env body, tag)
+  and helpD env decl =
+    match decl with
+    | DFun(name, args, body, tag) ->
+       let (newArgs, env') = helpBS env args in
+       DFun(name, newArgs, helpE env' body, tag)
+  and helpB env b =
     match b with
-    | BBlank(tag) -> (b, env)
+    | BBlank tag -> (b, env)
     | BName(name, allow_shadow, tag) ->
        let name' = sprintf "%s_%d" name tag in
-       (BName(name', allow_shadow, tag), StringMap.add name (name', None) env)
+       (BName(name', allow_shadow, tag), (name, name') :: env)
     | BTuple(binds, tag) ->
        let (binds', env') = helpBS env binds in
        (BTuple(binds', tag), env')
@@ -477,33 +494,30 @@ let rename_and_tag (p : tag program) : tag program =
     | ENil _ -> e
     | EId(name, tag) ->
        (try
-         EId(fst (StringMap.find name env), tag)
-        with Not_found ->
-          raise (InternalCompilerError(sprintf "Could not find %s in env: <%s>" name (ExtString.String.join ", " (env_keys env)))))
-    (* As a special case, if you see an EApp to a Native function by name, don't rename it --
-       that name comes from assembly and should not be modified! *)
-    | EApp(EId _ as func, args, Native, tag) ->
-       EApp(func, List.map (helpE env) args, Native, tag)
+         EId(find env name, tag)
+       with InternalCompilerError _ -> e)
     | EApp(func, args, native, tag) ->
        let func = helpE env func in
        let call_type =
-         match func with
-         | EId(name, _) ->
-            (match StringMap.find_opt name env with None -> Snake | Some (_, Some ct) -> ct | Some _ -> Snake)
-         | _ -> Snake in
+         (* TODO: If you want, try to determine whether func is a known function name, and if so,
+            whether it's a Snake function or a Native function *)
+         Snake in
        EApp(func, List.map (helpE env) args, call_type, tag)
     | ELet(binds, body, tag) ->
        let (binds', env') = helpBG env binds in
        let body' = helpE env' body in
        ELet(binds', body', tag)
-    | ELambda(args, body, tag) ->
-       let (newargs, env') = helpBS env args in
-       ELambda(newargs, helpE env' body, tag)
-    | ELetRec(bindexps, body, tag) ->
-       let env' = List.fold_left (fun env (b, _, _) -> snd (helpB env b)) env bindexps in
-       let (binds', env') = helpBG env' bindexps in
-       ELetRec(binds', helpE env' body, tag)
-  in (rename StringMap.empty p)
+    | ELetRec(bindings, body, tag) ->
+       let (revbinds, env) = List.fold_left (fun (revbinds, env) (b, e, t) ->
+                                 let (b, env) = helpB env b in ((b, e, t)::revbinds, env)) ([], env) bindings in
+       let bindings' = List.fold_left (fun bindings (b, e, tag) -> (b, helpE env e, tag)::bindings) [] revbinds in
+       let body' = helpE env body in
+       ELetRec(bindings', body', tag)
+    | ELambda(binds, body, tag) ->
+       let (binds', env') = helpBS env binds in
+       let body' = helpE env' body in
+       ELambda(binds', body', tag)
+  in (rename [] p)
 ;;
 
 
@@ -685,51 +699,6 @@ let free_vars (e: 'a aexpr) : string list =
   raise (NotYetImplemented "Implement free_vars for expressions")
 ;;
 
-(* TODO WHAT? *)
-(* let free_vars_E (e : 'a aexpr) rec_binds : string list = *)
-(*   let rec helpA (bound : string list) (e : 'a aexpr) : string list = *)
-(*     match e with *)
-(*     | ASeq(e1, e2, _) -> helpC bound e1 @ helpA bound e2 *)
-(*     | ALet(name, binding, body, _) -> *)
-(*      (helpC bound binding) (1* all the free variables in the binding, plus *1) *)
-(*      (1* all the free variables in the body, except the name itself *1) *)
-(*      @ (helpA (name :: bound) body) *)
-(*     | ALetRec(bindings, body, _) -> *)
-(*        let names = List.map fst bindings in *)
-(*        let new_bound = (names @ bound) in *)
-(*         (helpA new_bound body) @ List.flatten (List.map (fun binding -> helpC new_bound (snd binding)) bindings) *)
-(*     | ACExpr c -> helpC bound c *)
-(*   and helpC (bound : string list) (e : 'a cexpr) : string list = *)
-(*     match e with *)
-(*     | CLambda(args, body, _) -> *)
-(*       helpA (args @ bound) body *)
-(*     | CIf(cond, thn, els, _) -> *)
-(*       helpI bound cond @ helpA bound thn @ helpA bound els *)
-(*     | CPrim1(_, arg, _) -> helpI bound arg *)
-(*     | CPrim2(_, left, right, _) -> helpI bound left @ helpI bound right *)
-(*     (1* This special case notices when you are calling a Native function by name, *)
-(*        and ignores that name as a "free variable" at the level of Snake variable names *1) *)
-(*     | CApp(ImmId _, args, Native, _) -> *)
-(*        (List.flatten (List.map (fun arg -> helpI bound arg) args)) *)
-(*     | CApp(fn, args, _, _) -> *)
-(*       (helpI bound fn) @ (List.flatten (List.map (fun arg -> helpI bound arg) args)) *)
-(*     | CTuple(vals, _) -> List.flatten (List.map (fun v -> helpI bound v) vals) *)
-(*     | CGetItem(tup, _, _) -> helpI bound tup *)
-(*     | CSetItem(tup, _, rhs, _) -> helpI bound tup @ helpI bound rhs *)
-(*     | CImmExpr i -> helpI bound i *)
-(*   and helpI (bound : string list) (e : 'a immexpr) : string list = *)
-(*     match e with *)
-(*     | ImmId(name, _) -> *)
-(*       (1* a name is free if it is not bound *1) *)
-(*       if List.mem name bound then [] else [name] *)
-(*     | _ -> [] *)
-(*   in List.sort_uniq String.compare (helpA rec_binds e) *)
-(* ;; *)
-(* let free_vars_P (p : 'a aprogram) rec_binds : string list = *)
-(*   match p with *)
-(*   | AProgram(body, _) -> free_vars_E body rec_binds *)
-(* ;; *)
-
 (* IMPLEMENT THIS FROM YOUR PREVIOUS ASSIGNMENT *)
 let naive_stack_allocation (prog: tag aprogram) : tag aprogram * arg envt envt =
   raise (NotYetImplemented "Implement stack allocation for egg-eater")
@@ -832,7 +801,7 @@ let add_native_lambdas (p : sourcespan program) =
   in
   match p with
   | Program(declss, body, tag) ->
-     Program((StringMap.fold (fun name (_, arity) declss -> (wrap_native name arity)::declss) native_fun_bindings declss), body, tag)
+    Program((List.fold_left (fun declss (name, (_, arity)) -> (wrap_native name arity)::declss) declss native_fun_bindings), body, tag)
 
 let compile_prog (anfed, env) =
   let prelude =

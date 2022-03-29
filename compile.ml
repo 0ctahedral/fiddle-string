@@ -5,9 +5,8 @@ open Exprs
 open Assembly
 open Errors
 
-module StringSet = Set.Make(String);;
-module StringMap = Map.Make(String);;
-type 'a envt = 'a StringMap.t;;
+module StringSet = Set.Make(String)
+type 'a envt = (string * 'a) list
 
 let print_env env how =
   debug_printf "Env is\n";
@@ -49,38 +48,66 @@ let first_six_args_registers = [RDI; RSI; RDX; RCX; R8; R9]
 let heap_reg = R15
 let scratch_reg = R11
 
-let from_bindings bindings =
-  List.fold_left (fun acc (name, info) -> StringMap.add name info acc) StringMap.empty bindings
+(* You may find some of these helpers useful *)
+
+let rec find ls x =
+  match ls with
+  | [] -> raise (InternalCompilerError (sprintf "Name %s not found" x))
+  | (y,v)::rest ->
+     if y = x then v else find rest x
+
+let count_vars e =
+  let rec helpA e =
+    match e with
+    | ASeq(e1, e2, _) -> max (helpC e1) (helpA e2)
+    | ALet(_, bind, body, _) -> 1 + (max (helpC bind) (helpA body))
+    | ALetRec(binds, body, _) ->
+       (List.length binds) + List.fold_left max (helpA body) (List.map (fun (_, rhs) -> helpC rhs) binds)
+    | ACExpr e -> helpC e
+  and helpC e =
+    match e with
+    | CIf(_, t, f, _) -> max (helpA t) (helpA f)
+    | _ -> 0
+  in helpA e
+
+let rec replicate x i =
+  if i = 0 then []
+  else x :: (replicate x (i - 1))
+
+
+let rec find_decl (ds : 'a decl list) (name : string) : 'a decl option =
+  match ds with
+    | [] -> None
+    | (DFun(fname, _, _, _) as d)::ds_rest ->
+      if name = fname then Some(d) else find_decl ds_rest name
+
+let rec find_one (l : 'a list) (elt : 'a) : bool =
+  match l with
+    | [] -> false
+    | x::xs -> (elt = x) || (find_one xs elt)
+
+let rec find_dup (l : 'a list) : 'a option =
+  match l with
+    | [] -> None
+    | [x] -> None
+    | x::xs ->
+      if find_one xs x then Some(x) else find_dup xs
 ;;
 
-let prim_bindings : (call_type * int) envt = from_bindings [
-  (* Add descriptions of all the primops here *)
-  (* e.g. ("prim1:Add1", (Prim, 1)) *)
-]
-let native_fun_bindings : (call_type * int) envt = from_bindings [
-  (* Add any functions that are defined by the runtime, here *)
-  (* e.g. ("equal", (Native, 2)) *)
-]
-let initial_fun_env : (call_type * int) envt =
-  StringMap.union (fun key _ _ -> raise (InternalCompilerError (sprintf "%s is defined as both a prim and a native fun" key)))
-                  prim_bindings
-                  native_fun_bindings
-
-let initial_val_env : sourcespan envt = from_bindings [
-  (* create an initial environment of any globally defined values here *)
-]
-
-let initial_val_env = from_bindings [];;
-
+let rec find_opt (env : 'a envt) (elt: string) : 'a option =
+  match env with
+  | [] -> None
+  | (x, v) :: rst -> if x = elt then Some(v) else find_opt rst elt
+;;
                              
 (* Prepends a list-like env onto an envt *)
-let merge_envs list_env1 env2 =
-  List.fold_right (fun (id, offset) env -> StringMap.add id offset env) list_env1 env2
+let merge_envs list_env1 list_env2 =
+  list_env1 @ list_env2
 ;;
 (* Combines two envts into one, preferring the first one *)
 let prepend env1 env2 = StringMap.union (fun _ a _ -> Some a) env1 env2
 ;;
-let env_keys e = List.map fst (StringMap.bindings e);;
+let env_keys e = List.map fst e;;
 
 (* Scope_info stores the location where something was defined,
    and if it was a function declaration, then its type arity and argument arity *)
@@ -102,7 +129,7 @@ let is_well_formed (p : sourcespan program) : (sourcespan program) fallible =
          [Overflow(n, loc)]
        else
          []
-    | EId (x, loc) -> if StringMap.mem x env then [] else [UnboundId(x, loc)]
+    | EId (x, loc) -> if (find_one (List.map fst env) x) then [] else [UnboundId(x, loc)]
     | EPrim1(_, e, _) -> wf_E e env
     | EPrim2(_, l, r, _) -> wf_E l env @ wf_E r env
     | EIf(c, t, f, _) -> wf_E c env @ wf_E t env @ wf_E f env
@@ -130,7 +157,7 @@ let is_well_formed (p : sourcespan program) : (sourcespan program) fallible =
          | BName(x, allow_shadow, xloc)::rest ->
             let shadow =
               if allow_shadow then []
-              else match StringMap.find_opt x env with
+              else match find_opt env x with
                    | None -> []
                    | Some (existing, _, _) -> [ShadowId(x, xloc, existing)] in
             let new_env = StringMap.add x (xloc, None, None) env in
@@ -704,7 +731,7 @@ let free_vars (e: 'a aexpr) : string list =
 (* ;; *)
 
 (* IMPLEMENT THIS FROM YOUR PREVIOUS ASSIGNMENT *)
-let naive_stack_allocation (prog: tag aprogram) : tag aprogram * arg envt =
+let naive_stack_allocation (prog: tag aprogram) : tag aprogram * arg envt envt =
   raise (NotYetImplemented "Implement stack allocation for egg-eater")
 ;;
 

@@ -38,19 +38,17 @@ let builtins_size = 4 (* arity + 0 vars + codeptr + padding *) * 1 (* TODO FIXME
 let pair_tests = [
   t "tup1" "let t = (4, (5, 6)) in
             begin
-              t[0 of 2 := 7];
+              t[0] := 7;
               t
             end" "" "(7, (5, 6))";
-  t "tup2" "type intlist = (Int * intlist)
-            let t : intlist = (4, (5, nil : intlist)) in
+  t "tup2" "let t = (4, (5, nil)) in
             begin
-              t[1 of 2 := nil : intlist];
+              t[1] := nil;
               t
             end" "" "(4, nil)";
-  t "tup3" "type intlist = (Int * intlist)
-            let t : intlist = (4, (5, nil : intlist)) in
+  t "tup3" "let t = (4, (5, nil)) in
             begin
-              t[1 of 2 := t];
+              t[1] := t;
               t
             end" "" "(4, <cyclic tuple 1>)";
   t "tup4" "let t = (4, 6) in

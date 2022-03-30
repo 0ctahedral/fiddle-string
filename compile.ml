@@ -701,7 +701,7 @@ let free_vars (e: 'a aexpr) : string list =
 
 (* IMPLEMENT THIS FROM YOUR PREVIOUS ASSIGNMENT *)
 let naive_stack_allocation (prog: tag aprogram) : tag aprogram * arg envt envt =
-  raise (NotYetImplemented "Implement stack allocation for egg-eater")
+  raise (NotYetImplemented "Implement stack allocation for garter")
 ;;
 
 let count_vars e =
@@ -803,57 +803,57 @@ let add_native_lambdas (p : sourcespan program) =
   | Program(declss, body, tag) ->
     Program((List.fold_left (fun declss (name, (_, arity)) -> (wrap_native name arity)::declss) declss native_fun_bindings), body, tag)
 
-let compile_prog (anfed, env) =
+let compile_prog (anfed, (env : arg envt envt)) =
   let prelude =
     "section .text
-extern error
-extern input
-extern print
-extern print_stack
-extern equal
-extern try_gc
-extern naive_print_heap
-extern HEAP
-extern HEAP_END
-extern set_stack_bottom
-global our_code_starts_here" in
+extern ?error
+extern ?input
+extern ?print
+extern ?print_stack
+extern ?equal
+extern ?try_gc
+extern ?naive_print_heap
+extern ?HEAP
+extern ?HEAP_END
+extern ?set_stack_bottom
+global ?our_code_starts_here" in
   let suffix = sprintf "
-err_comp_not_num:%s
-err_arith_not_num:%s
-err_logic_not_bool:%s
-err_if_not_bool:%s
-err_overflow:%s
-err_get_not_tuple:%s
-err_get_low_index:%s
-err_get_high_index:%s
-err_nil_deref:%s
-err_out_of_memory:%s
-err_set_not_tuple:%s
-err_set_low_index:%s
-err_set_high_index:%s
-err_call_not_closure:%s
-err_call_arity_err:%s
+?err_comp_not_num:%s
+?err_arith_not_num:%s
+?err_logic_not_bool:%s
+?err_if_not_bool:%s
+?err_overflow:%s
+?err_get_not_tuple:%s
+?err_get_low_index:%s
+?err_get_high_index:%s
+?err_nil_deref:%s
+?err_out_of_memory:%s
+?err_set_not_tuple:%s
+?err_set_low_index:%s
+?err_set_high_index:%s
+?err_call_not_closure:%s
+?err_call_arity_err:%s
 "
-                       (to_asm (native_call (Label "error") [Const(err_COMP_NOT_NUM); Reg(scratch_reg)]))
-                       (to_asm (native_call (Label "error") [Const(err_ARITH_NOT_NUM); Reg(scratch_reg)]))
-                       (to_asm (native_call (Label "error") [Const(err_LOGIC_NOT_BOOL); Reg(scratch_reg)]))
-                       (to_asm (native_call (Label "error") [Const(err_IF_NOT_BOOL); Reg(scratch_reg)]))
-                       (to_asm (native_call (Label "error") [Const(err_OVERFLOW); Reg(RAX)]))
-                       (to_asm (native_call (Label "error") [Const(err_GET_NOT_TUPLE); Reg(scratch_reg)]))
-                       (to_asm (native_call (Label "error") [Const(err_GET_LOW_INDEX); Reg(scratch_reg)]))
-                       (to_asm (native_call (Label "error") [Const(err_GET_HIGH_INDEX)]))
-                       (to_asm (native_call (Label "error") [Const(err_NIL_DEREF); Reg(scratch_reg)]))
-                       (to_asm (native_call (Label "error") [Const(err_OUT_OF_MEMORY); Reg(scratch_reg)]))
-                       (to_asm (native_call (Label "error") [Const(err_SET_NOT_TUPLE); Reg(scratch_reg)]))
-                       (to_asm (native_call (Label "error") [Const(err_SET_LOW_INDEX); Reg(scratch_reg)]))
-                       (to_asm (native_call (Label "error") [Const(err_SET_HIGH_INDEX); Reg(scratch_reg)]))
-                       (to_asm (native_call (Label "error") [Const(err_CALL_NOT_CLOSURE); Reg(scratch_reg)]))
-                       (to_asm (native_call (Label "error") [Const(err_CALL_ARITY_ERR); Reg(scratch_reg)]))
+                       (to_asm (native_call (Label "?error") [Const(err_COMP_NOT_NUM); Reg(scratch_reg)]))
+                       (to_asm (native_call (Label "?error") [Const(err_ARITH_NOT_NUM); Reg(scratch_reg)]))
+                       (to_asm (native_call (Label "?error") [Const(err_LOGIC_NOT_BOOL); Reg(scratch_reg)]))
+                       (to_asm (native_call (Label "?error") [Const(err_IF_NOT_BOOL); Reg(scratch_reg)]))
+                       (to_asm (native_call (Label "?error") [Const(err_OVERFLOW); Reg(RAX)]))
+                       (to_asm (native_call (Label "?error") [Const(err_GET_NOT_TUPLE); Reg(scratch_reg)]))
+                       (to_asm (native_call (Label "?error") [Const(err_GET_LOW_INDEX); Reg(scratch_reg)]))
+                       (to_asm (native_call (Label "?error") [Const(err_GET_HIGH_INDEX)]))
+                       (to_asm (native_call (Label "?error") [Const(err_NIL_DEREF); Reg(scratch_reg)]))
+                       (to_asm (native_call (Label "?error") [Const(err_OUT_OF_MEMORY); Reg(scratch_reg)]))
+                       (to_asm (native_call (Label "?error") [Const(err_SET_NOT_TUPLE); Reg(scratch_reg)]))
+                       (to_asm (native_call (Label "?error") [Const(err_SET_LOW_INDEX); Reg(scratch_reg)]))
+                       (to_asm (native_call (Label "?error") [Const(err_SET_HIGH_INDEX); Reg(scratch_reg)]))
+                       (to_asm (native_call (Label "?error") [Const(err_CALL_NOT_CLOSURE); Reg(scratch_reg)]))
+                       (to_asm (native_call (Label "?error") [Const(err_CALL_ARITY_ERR); Reg(scratch_reg)]))
   in
   match anfed with
   | AProgram(body, _) ->
   (* $heap and $size are mock parameter names, just so that compile_fun knows our_code_starts_here takes in 2 parameters *)
-     let (prologue, comp_main, epilogue) = compile_fun "?our_code_starts_here_entry" ["$heap"; "$size"] body env in
+     let (prologue, comp_main, epilogue) = compile_fun "?our_code_starts_here" ["$heap"; "$size"] body env in
      let heap_start =
        [
          ILineComment("heap start");

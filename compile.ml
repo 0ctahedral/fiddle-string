@@ -6,7 +6,11 @@ open Assembly
 open Errors
 
 module StringSet = Set.Make(String)
-type 'a envt = (string * 'a) list
+
+
+type 'a name_envt = (string * 'a) list
+type 'a tag_envt  = (tag * 'a) list
+
 
 let print_env env how =
   debug_printf "Env is\n";
@@ -102,17 +106,17 @@ let rec find_dup (l : 'a list) : 'a option =
       if find_one xs x then Some(x) else find_dup xs
 ;;
 
-let rec find_opt (env : 'a envt) (elt: string) : 'a option =
+let rec find_opt (env : 'a name_envt) (elt: string) : 'a option =
   match env with
   | [] -> None
   | (x, v) :: rst -> if x = elt then Some(v) else find_opt rst elt
 ;;
                              
-(* Prepends a list-like env onto an envt *)
+(* Prepends a list-like env onto an name_envt *)
 let merge_envs list_env1 list_env2 =
   list_env1 @ list_env2
 ;;
-(* Combines two envts into one, preferring the first one *)
+(* Combines two name_envts into one, preferring the first one *)
 let prepend env1 env2 =
   let rec help env1 env2 =
     match env1 with
@@ -130,7 +134,7 @@ let env_keys e = List.map fst e;;
    and if it was a function declaration, then its type arity and argument arity *)
 type scope_info = (sourcespan * int option * int option)
 let is_well_formed (p : sourcespan program) : (sourcespan program) fallible =
-  let rec wf_E e (env : scope_info envt) =
+  let rec wf_E e (env : scope_info name_envt) =
     debug_printf "In wf_E: %s\n" (ExtString.String.join ", " (env_keys env));
     match e with
     | ESeq(e1, e2, _) -> wf_E e1 env @ wf_E e2 env
@@ -166,7 +170,7 @@ let is_well_formed (p : sourcespan program) : (sourcespan program) fallible =
          | (BName(x, _, def)::rest) -> (List.map (fun use -> DuplicateId(x, use, def)) (find_locs x rest)) @ (find_dupes rest)
          | (BTuple(binds, _)::rest) -> find_dupes (binds @ rest) in
        let dupeIds = find_dupes (List.map (fun (b, _, _) -> b) bindings) in
-       let rec process_binds (rem_binds : 'a bind list) (env : scope_info envt) =
+       let rec process_binds (rem_binds : 'a bind list) (env : scope_info name_envt) =
          match rem_binds with
          | [] -> (env, [])
          | BBlank _::rest -> process_binds rest env
@@ -180,7 +184,7 @@ let is_well_formed (p : sourcespan program) : (sourcespan program) fallible =
             let new_env = (x, (xloc, None, None))::env in
             let (newer_env, errs) = process_binds rest new_env in
             (newer_env, (shadow @ errs)) in
-       let rec process_bindings bindings (env : scope_info envt) =
+       let rec process_bindings bindings (env : scope_info name_envt) =
          match bindings with
          | [] -> (env, [])
          | (b, e, loc)::rest ->
@@ -221,7 +225,7 @@ let is_well_formed (p : sourcespan program) : (sourcespan program) fallible =
          | (BName(x, _, def)::rest) -> List.map (fun use -> DuplicateId(x, use, def)) (find_locs x rest)
          | (BTuple(binds, _)::rest) -> find_dupes (binds @ rest) in
        let dupeIds = find_dupes (List.map (fun (b, _, _) -> b) binds) in
-       let rec process_binds (rem_binds : sourcespan bind list) (env : scope_info envt) =
+       let rec process_binds (rem_binds : sourcespan bind list) (env : scope_info name_envt) =
          match rem_binds with
          | [] -> (env, [])
          | BBlank _::rest -> process_binds rest env
@@ -275,7 +279,7 @@ let is_well_formed (p : sourcespan program) : (sourcespan program) fallible =
          | BName(x, _, xloc) -> [(x, (xloc, None, None))]
          | BTuple(args, _) -> List.concat (List.map flatten_bind args) in
        (process_args binds) @ wf_E body (merge_envs (List.concat (List.map flatten_bind binds)) env)
-  and wf_D d (env : scope_info envt) (tyenv : StringSet.t) =
+  and wf_D d (env : scope_info name_envt) (tyenv : StringSet.t) =
     match d with
     | DFun(_, args, body, _) ->
        let rec dupe x args =
@@ -295,15 +299,15 @@ let is_well_formed (p : sourcespan program) : (sourcespan program) fallible =
          | BTuple(binds, loc)::rest ->
             process_args (binds @ rest)
        in
-       let rec arg_env args (env : scope_info envt) =
+       let rec arg_env args (env : scope_info name_envt) =
          match args with
          | [] -> env
          | BBlank _ :: rest -> arg_env rest env
          | BName(name, _, loc)::rest -> (name, (loc, None, None))::(arg_env rest env)
          | BTuple(binds, _)::rest -> arg_env (binds @ rest) env in
        (process_args args) @ (wf_E body (arg_env args env))
-  and wf_G (g : sourcespan decl list) (env : scope_info envt) (tyenv : StringSet.t) =
-    let add_funbind (env : scope_info envt) d =
+  and wf_G (g : sourcespan decl list) (env : scope_info name_envt) (tyenv : StringSet.t) =
+    let add_funbind (env : scope_info name_envt) d =
       match d with
       | DFun(name, args, _, loc) ->
          (name, (loc, Some (List.length args), Some (List.length args)))::env in
@@ -700,7 +704,7 @@ let free_vars (e: 'a aexpr) : string list =
 ;;
 
 (* IMPLEMENT THIS FROM YOUR PREVIOUS ASSIGNMENT *)
-let naive_stack_allocation (prog: tag aprogram) : tag aprogram * arg envt envt =
+let naive_stack_allocation (prog: tag aprogram) : tag aprogram * arg name_envt name_envt =
   raise (NotYetImplemented "Implement stack allocation for garter")
 ;;
 
@@ -803,7 +807,7 @@ let add_native_lambdas (p : sourcespan program) =
   | Program(declss, body, tag) ->
     Program((List.fold_left (fun declss (name, (_, arity)) -> (wrap_native name arity)::declss) declss native_fun_bindings), body, tag)
 
-let compile_prog (anfed, (env : arg envt envt)) =
+let compile_prog (anfed, (env : arg name_envt name_envt)) =
   let prelude =
     "section .text
 extern ?error

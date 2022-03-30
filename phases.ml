@@ -4,6 +4,9 @@ open Errors
 open Pretty
 open Assembly
 
+type 'a name_envt = (string * 'a) list
+type 'a tag_envt  = (tag * 'a) list
+
 (* There are lots of ways to work with pipelines of functions that "can fail
    at any point". They all have various drawbacks, though.  See
    http://keleshev.com/composable-error-handling-in-ocaml for a decent writeup
@@ -25,7 +28,7 @@ type phase =
   | AddedNatives of sourcespan program
   | Tagged of tag program
   | ANFed of tag aprogram
-  | Located of tag aprogram * (string * (string * arg) list) list
+  | Located of tag aprogram * arg name_envt name_envt
   | Result of string
 ;;
 (* These functions simply apply a phase constructor, because OCaml

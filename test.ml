@@ -23,34 +23,32 @@ let tparse name program expected = name>::fun _ ->
 let teq name actual expected = name>::fun _ ->
   assert_equal expected actual ~printer:(fun s -> s);;
 
-let tfvs name program expected = name>::
-  (fun _ ->
-    let ast = parse_string name program in
-    let anfed = anf (tag ast) in
-    let vars = free_vars_P anfed [] in
-    let c = Stdlib.compare in
-    let str_list_print strs = "[" ^ (ExtString.String.join ", " strs) ^ "]" in
-    assert_equal (List.sort c vars) (List.sort c expected) ~printer:str_list_print)
-;;
+(* let tfvs name program expected = name>:: *)
+(*   (fun _ -> *)
+(*     let ast = parse_string name program in *)
+(*     let anfed = anf (tag ast) in *)
+(*     let vars = free_vars_P anfed [] in *)
+(*     let c = Stdlib.compare in *)
+(*     let str_list_print strs = "[" ^ (ExtString.String.join ", " strs) ^ "]" in *)
+(*     assert_equal (List.sort c vars) (List.sort c expected) ~printer:str_list_print) *)
+(* ;; *)
 
-let builtins_size = 4 (* arity + 0 vars + codeptr + padding *) * (List.length TypeCheck.native_fun_bindings)
+let builtins_size = 4 (* arity + 0 vars + codeptr + padding *) * 1 (* TODO FIXME (List.length Compile.native_fun_bindings) *)
 
 let pair_tests = [
   t "tup1" "let t = (4, (5, 6)) in
             begin
-              t[0 of 2 := 7];
+              t[0] := 7;
               t
             end" "" "(7, (5, 6))";
-  t "tup2" "type intlist = (Int * intlist)
-            let t : intlist = (4, (5, nil : intlist)) in
+  t "tup2" "let t = (4, (5, nil)) in
             begin
-              t[1 of 2 := nil : intlist];
+              t[1] := nil;
               t
             end" "" "(4, nil)";
-  t "tup3" "type intlist = (Int * intlist)
-            let t : intlist = (4, (5, nil : intlist)) in
+  t "tup3" "let t = (4, (5, nil)) in
             begin
-              t[1 of 2 := t];
+              t[1] := t;
               t
             end" "" "(4, <cyclic tuple 1>)";
   t "tup4" "let t = (4, 6) in

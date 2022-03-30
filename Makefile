@@ -10,7 +10,7 @@ ifeq ($(UNAME), Darwin)
 endif
 endif
 
-PKGS=oUnit,extlib,unix
+PKGS=ounit2,extlib,unix
 BUILD=ocamlbuild -r -use-ocamlfind -cflag -annot -ocamlyacc 'ocamlyacc -v'
 
 main: *.ml parser.mly lexer.mll

@@ -68,19 +68,23 @@ uint64_t* copy_if_needed(uint64_t* garter_val_addr, uint64_t* heap_top) {
     The new location within to_start at which to allocate new data
  */
 uint64_t* gc(uint64_t* bottom_frame, uint64_t* top_frame, uint64_t* top_stack, uint64_t* from_start, uint64_t* from_end, uint64_t* to_start) {
-  for (uint64_t* cur_word = top_stack /* maybe need a +1 here? */; cur_word < top_frame; cur_word++) {
-    to_start = copy_if_needed(cur_word, to_start);
-  }
-  if (top_frame < bottom_frame) {
-    to_start = gc(bottom_frame,
-                  (uint64_t*)(*top_frame), // [top_frame] points to the saved RBP, which is the next stack frame
-                  top_frame + 2,      // [top_frame+4] points to the return address
-                                      // so [top_frame+8] is the next frame's stack-top
-                  from_start,
-                  from_end,
-                  to_start); // to_start has been changed to include any newly copied data
-  }
-  // after copying the remaining stack frames, return the new allocation starting point
+
+  uint64_t* old_top_frame = top_frame;
+  do {
+    for (uint64_t* cur_word = top_stack /* maybe need a +1 here? */; cur_word < top_frame; cur_word++) {
+      to_start = copy_if_needed(cur_word, to_start);
+    }
+    /* Shift to next stack frame:
+     * [top_frame] points to the saved RBP, which is the RBP of the next stack frame,
+     * [top_frame + 8] is the return address, and
+     * [top_frame + 16] is therefore the next frame's stack-top
+     */
+    top_stack = top_frame + 2;
+    old_top_frame = top_frame;
+    top_frame = (uint64_t*)(*top_frame);
+  } while (old_top_frame < bottom_frame); // Use the old stack frame to decide if there's more GC'ing to do
+
+  // after copying and GC'ing all the stack frames, return the new allocation starting point
   return to_start;       
 }
 

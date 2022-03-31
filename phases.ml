@@ -21,8 +21,6 @@ type phase =
   | Source of string
   | Parsed of sourcespan program
   | WellFormed of sourcespan program
-  | TypeInferred of sourcespan program
-  | TypeChecked of sourcespan program
   | Renamed of tag program
   | Desugared of sourcespan program
   | AddedNatives of sourcespan program
@@ -39,8 +37,6 @@ let well_formed p = WellFormed p
 let renamed p = Renamed p
 let desugared p = Desugared p
 let tagged p = Tagged p
-let type_inferred p = TypeInferred p
-let type_checked p = TypeChecked p
 let anfed p = ANFed p
 let add_natives p = AddedNatives p
 let locate_bindings(p, e) = Located(p, e)
@@ -115,8 +111,6 @@ let print_trace (trace : phase list) : string list =
     | Desugared _ -> "Desugared"
     | AddedNatives _ -> "Natives Added"
     | Tagged _ -> "Tagged"
-    | TypeInferred _ -> "TypeInferred"
-    | TypeChecked _ -> "TypeChecked"
     | ANFed _ -> "ANF'ed"
     | Located _  -> "Located"
     | Result _ -> "Result" in
@@ -127,8 +121,6 @@ let print_trace (trace : phase list) : string list =
     | Renamed p -> string_of_program p
     | Desugared p -> string_of_program p
     | AddedNatives p -> string_of_program p
-    | TypeInferred p
-    | TypeChecked p -> ast_of_program p
     | Tagged p -> string_of_program_with 1000 (fun tag -> sprintf "@%d" tag) p
     | ANFed p -> string_of_aprogram_with 1000 (fun tag -> sprintf "@%d" tag)  p
     | Located(p, e) ->

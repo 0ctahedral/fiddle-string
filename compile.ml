@@ -705,7 +705,103 @@ let free_vars (e: 'a aexpr) : string list =
 
 (* IMPLEMENT THIS FROM YOUR PREVIOUS ASSIGNMENT *)
 let naive_stack_allocation (prog: tag aprogram) : tag aprogram * arg name_envt name_envt =
-  raise (NotYetImplemented "Implement stack allocation for garter")
+  (* mjr - ASSUMPTION: in an Aexpr you just want to add to the most recent env, as this was created by your parent *)
+  (*
+  let t = (1, 2) in
+      let (a, b) = t, m = 3
+          in a + (b * m)
+
+  (("equal_4"
+    (("a_10" loc)
+      ("b_11" loc)
+      ("*equal" [label])))
+   ("print_14"
+    (("a_19" loc)
+      ("*print" [label])))
+   ("input_22"
+     ("*input" [label]))
+   ("body
+      ("t_28" loc)
+      ("tmp_1_34" loc)
+      ("b_38" loc)
+      ("b_38" loc)
+      ("a_44" loc)
+      ("m_50" loc)
+      ("binop_54" loc))))
+
+
+
+
+    let rec fact = (lambda(n):
+                      if n == 1:
+                        1
+                      else:
+                        n * fact(n - 1))
+            in
+             fact(3)
+
+    (("equal_4"
+        (("a_10" arg_loc)
+          ("b_11" arg_loc)
+          ("*equal" [label])))
+      ("print_14"
+        (("a_19" arg_loc)
+          ("*print" [label])))
+      ("input_22"
+           ("*input" [label]))
+      ("fact_28" (("n_42" (("binop_31" (var_loc 0))
+                   ("binop_38" (var_loc 0))
+                   ("app_37" (var_loc 1))))
+      ("body
+           ())))
+
+    going up one on the list is your parent scope
+
+    search goes up in the list, recursively checking the parent scope
+
+   *)
+  let rec helpA (expr : tag aexpr) (env: arg name_envt name_envt) (si : int) : arg name_envt =
+    let ((name, curr_env), rest_env) = match env with
+    | e::rest -> (e, rest)
+    | _ -> raise (InternalCompilerError "helpA environment should never be empty") in
+    match expr with
+      | ASeq(bind, body, _) -> let bind_envt = (helpC bind si) in
+                         let body_env = (helpA body (si + 1)) in
+                           (name, bind_envt @ body_env @ curr_env) :: rest
+      | ALet(id, bind, body, _) -> let bind_envt = (helpC bind si) in
+                                   let body_env = (helpA body (si + 1)) in
+                                     bind_envt @ (id, RegOffset(~-si * word_size, RBP))::body_env
+      | ACExpr(cexpr) -> helpC cexpr si
+      | ALetRec(_binds, _body, _) -> []
+          (* TODO: Not sure what let rec needs
+                let (csi, binds_env) = List.fold_left (fun (csi, acc) (name, exp) -> 
+                  let bind_body_env = helpC exp (si + List.length binds) in
+                  (csi + 1, [(name, RegOffset(~-csi * word_size, RBP))] @ bind_body_env @ acc)) (si, []) binds in
+                let body_env = (helpA body csi) in
+                  binds_env @ body_env
+                  *)
+  and helpC (cexpr : tag cexpr) (si : int) : arg name_envt name_envt =
+    match cexpr with
+      | CIf(_cond, thn, els, _) -> let thn_envt = helpA thn si in
+                                  let els_envt = helpA els si in
+                                  thn_envt @ els_envt
+    (* Basically the only place a new environment should be created?
+       the environment we use for closing over free variables should be that of the parent.
+       We create a new one to pass to the body that includes the binds
+     *)
+      | CLambda(binds, body, _) -> 
+        let (_, init_env) = List.fold_left_map
+            (fun si param -> let mapping = (param, RegOffset(si * word_size, RBP)) in (si + 1, mapping))
+            3 binds in
+        let body_env = helpA body si in
+        init_env @ body_env
+      | _ -> []
+  in
+  match prog with
+    | AProgram(body, _) -> 
+                            (*let body_envt = helpA body si in*)
+                            let body_envt = helpA body [("root", [])] 1 in
+                            (prog, body_envt)
 ;;
 
 let count_vars e =

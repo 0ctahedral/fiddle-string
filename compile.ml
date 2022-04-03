@@ -790,10 +790,8 @@ let:
           let ((body_env, new_si), binds_env) = List.fold_left_map (fun (init_env, csi) (name, exp) ->
             (* TODO: does this make sense? for each fun we increase the si for its local variables *)
             let pre_fun_env = (add_to_first_envt init_env (name, RegOffset(~-csi * word_size, RBP))) in
-            match (helpC exp pre_fun_env (csi + 1)) with
-            | _ :: bind_env -> ((pre_fun_env, csi + 1), bind_env)
-            | _ -> raise (InternalCompilerError "shouldn't get here")
-            ) (env, si) binds in
+            ((pre_fun_env, csi + 1), (helpL exp pre_fun_env csi)))
+          (env, si) binds in
           let binds_env = body_env @ List.flatten binds_env in
           helpA body binds_env new_si
 
@@ -804,6 +802,10 @@ let:
           let thn_envt = helpA thn env si in
           let els_envt = helpA els thn_envt si in
               els_envt
+      | CLambda(_, _, _) -> env @ (helpL cexpr env si)
+      | _ -> env
+  and helpL (cexpr : tag cexpr) (env: arg name_envt name_envt) (si : int) : arg name_envt name_envt =
+    match cexpr with
       | CLambda(args, body, _) -> 
           (* INVARIANT: the variable a closure is stored in must be added to its parent envt
              before we create it.
@@ -818,8 +820,8 @@ let:
           but when we create it we don't want to clobber the outer env?
            *)
           let new_env = helpA body [(env_name, args_env)] si in
-          env @ new_env
-      | _ -> env
+          new_env
+      | _ -> raise (InternalCompilerError "helpL should only be called on a lambda")
   (* helper to add a variable to an environment so we don't have to do destructuring up front *)
   and add_to_first_envt (env : arg name_envt name_envt) (var : (string * arg)) : arg name_envt name_envt =
     match env with

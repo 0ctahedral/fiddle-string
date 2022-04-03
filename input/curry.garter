@@ -1,0 +1,8 @@
+let p = 10,
+    addx = (lambda (x): 
+                let g = (lambda (y): x + y + p) in g),
+    z = 5 
+in
+let f = addx(z)
+in
+f(6)

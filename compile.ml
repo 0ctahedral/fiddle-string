@@ -772,52 +772,52 @@ let:
     going up one on the list is your parent scope
     search goes up in the list, recursively checking the parent scope
    *)
+  (* TODO: are the stack numbers correct? *)
   let rec helpA (expr : tag aexpr) (env: arg name_envt name_envt) (si : int) : arg name_envt name_envt =
     match expr with
-      | ASeq(bind, body, _) -> raise (NotYetImplemented "naive Seq") (*let bind_envt = (helpC bind si) in
-                         let body_env = (helpA body (si + 1)) in
-                           (name, bind_envt @ body_env @ curr_env) :: rest*)
-      | ALet(id, bind, body, _) ->
-        (* TODO: are the stack numbers correct? *)
-        let binds_env = (helpC bind env si) in
-        let post_binds_env = (addToCurrEnvt binds_env (id, RegOffset(~-si * word_size, RBP))) in
-        let body_env = (helpA body post_binds_env (si + 1)) in
+      | ASeq(bind, body, _) ->
+        let bind_env = (helpC bind env si) in
+        let body_env = (helpA body bind_env si) in
           body_env
-
-
-           
-          (*let bind_envt = (helpC bind si) in
-                                   let body_env = (helpA body (si + 1)) in
-                                     bind_envt @ (id, RegOffset(~-si * word_size, RBP))::body_env*)
+      | ALet(id, bind, body, _) ->
+        let post_binds_env = (add_to_first_envt env (id, RegOffset(~-si * word_size, RBP))) in
+        let bind_env = (helpC bind post_binds_env (si + 1)) in
+        let body_env = (helpA body bind_env (si + 1)) in
+          body_env
       | ACExpr(cexpr) -> helpC cexpr env si
       | ALetRec(_binds, _body, _) -> raise (NotYetImplemented "naive aletrec")
-          (* TODO: Not sure what let rec needs
-                let (csi, binds_env) = List.fold_left (fun (csi, acc) (name, exp) -> 
-                  let bind_body_env = helpC exp (si + List.length binds) in
-                  (csi + 1, [(name, RegOffset(~-csi * word_size, RBP))] @ bind_body_env @ acc)) (si, []) binds in
-                let body_env = (helpA body csi) in
-                  binds_env @ body_env
-                  *)
+
   and helpC (cexpr : tag cexpr) (env: arg name_envt name_envt) (si : int) : arg name_envt name_envt =
     match cexpr with
-      | CIf(_cond, thn, els, _) -> raise (NotYetImplemented "naive cif")
-          (*let thn_envt = helpA thn si in
-                                  let els_envt = helpA els si in
-                                  thn_envt @ els_envt
-                                  *)
-      | CLambda(binds, body, _) -> raise (NotYetImplemented "naive lambda")
-        (*let (_, init_env) = List.fold_left_map
-            (fun si param -> let mapping = (param, RegOffset(si * word_size, RBP)) in (si + 1, mapping))
-            3 binds in
-        let body_env = helpA body si in
-        init_env @ body_env
-        *)
+      | CIf(_cond, thn, els, _) -> 
+          let thn_envt = helpA thn env si in
+          let els_envt = helpA els thn_envt si in
+              els_envt
+      | CLambda(args, body, tag) -> 
+          (* INVARIANT: the variable a closure is stored in must be added to its parent envt
+             before we create it.
+             This allows us to look for the most recent variable declaration and use that name for
+             this new environment *)
+          let env_name = get_last_var env in
+          let args_env = List.mapi (fun i name ->
+            (name, RegOffset((i + 3) * word_size, RBP))) args in
+          (* TODO:
+          where should the stack inside a lambda start? 
+          when we execute it, we want to start at 0 right?
+          but when we create it we don't want to clobber the outer env?
+           *)
+          let new_env = helpA body [(env_name, args_env)] si in
+          env @ new_env
       | _ -> env
   (* helper to add a variable to an environment so we don't have to do destructuring up front *)
-  and addToCurrEnvt (env : arg name_envt name_envt) (var : (string * arg)) : arg name_envt name_envt =
+  and add_to_first_envt (env : arg name_envt name_envt) (var : (string * arg)) : arg name_envt name_envt =
     match env with
     | (name, env)::rest -> (name, var :: env) :: rest
-    | [] -> raise (InternalCompilerError "Alet rec should always have a current environment")
+    | [] -> raise (InternalCompilerError "cannot add to first env of empty envt")
+  and get_last_var (env : arg name_envt name_envt) : string =
+    match env with
+    | (_, (name, _)::_)::_ -> name
+    | _ -> raise (InternalCompilerError "could not find a last var")
   in
   match prog with
     | AProgram(body, _) -> 

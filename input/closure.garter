@@ -1,0 +1,8 @@
+let p = 5,
+    f = (lambda (x): 
+            let g = (p + 1) in
+            (x + 1) * g),
+    l = 10
+in
+let b = 1 in
+   f(b + l)

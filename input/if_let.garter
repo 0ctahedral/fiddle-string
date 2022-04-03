@@ -1,0 +1,9 @@
+let a = true,
+    b = if a:
+        let x = 5 in x
+    else:
+        let y = 7 in y
+in
+let g = b + 3 in
+g
+

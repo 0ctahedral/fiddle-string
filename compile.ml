@@ -785,7 +785,18 @@ let:
         let body_env = (helpA body bind_env (si + 1)) in
           body_env
       | ACExpr(cexpr) -> helpC cexpr env si
-      | ALetRec(_binds, _body, _) -> raise (NotYetImplemented "naive aletrec")
+      | ALetRec(binds, body, _) -> 
+          (* adds the binds to the body environment and then creates the env for each lambda *)
+          let ((body_env, new_si), binds_env) = List.fold_left_map (fun (init_env, csi) (name, exp) ->
+            (* TODO: does this make sense? for each fun we increase the si for its local variables *)
+            let pre_fun_env = (add_to_first_envt init_env (name, RegOffset(~-csi * word_size, RBP))) in
+            match (helpC exp pre_fun_env (csi + 1)) with
+            | _ :: bind_env -> ((pre_fun_env, csi + 1), bind_env)
+            | _ -> raise (InternalCompilerError "shouldn't get here")
+            ) (env, si) binds in
+          let binds_env = body_env @ List.flatten binds_env in
+          helpA body binds_env new_si
+
 
   and helpC (cexpr : tag cexpr) (env: arg name_envt name_envt) (si : int) : arg name_envt name_envt =
     match cexpr with
@@ -793,7 +804,7 @@ let:
           let thn_envt = helpA thn env si in
           let els_envt = helpA els thn_envt si in
               els_envt
-      | CLambda(args, body, tag) -> 
+      | CLambda(args, body, _) -> 
           (* INVARIANT: the variable a closure is stored in must be added to its parent envt
              before we create it.
              This allows us to look for the most recent variable declaration and use that name for

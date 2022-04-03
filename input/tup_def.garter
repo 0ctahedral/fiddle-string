@@ -1,8 +1,12 @@
-def bloop(x):
+def foo(x):
+  let f = (lambda (p): x + p) in
   x
+and def bar(x):
+  let f = (lambda (p): x + p) in
+  print(f)
 
 let t = (4, (5, 6)) in
             begin
               t[0] := 7;
-              bloop(t)
+              foo(t)
             end

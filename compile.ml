@@ -740,39 +740,57 @@ let naive_stack_allocation (prog: tag aprogram) : tag aprogram * arg name_envt n
             in
              fact(3)
 
-    (("equal_4"
-        (("a_10" arg_loc)
-          ("b_11" arg_loc)
-          ("*equal" [label])))
+
+letrec:
+  for each (ith) bind in the letrec:
+    - add name of bind in new environment with a si = si + i
+    - start with si = 0 and recurse on expression to get environment
+let:
+  for each (ith) bind:
+    - add to current environment with si = si + i
+
+    (("body
+           (("equal_4" (var_loc 0))
+            ("print_14" (var_loc 1))
+            ("print_22" (var_loc 2))
+            ("fact_28" (var_loc 3))))
+
+      ("fact_28" (("n_42" (arg 0))
+                  ("binop_31" (var_loc 0))
+                  ("binop_38" (var_loc 1))
+                  ("app_37"   (var_loc 2))))
+      ("input_22"
+           ("*input" [label]))
       ("print_14"
         (("a_19" arg_loc)
           ("*print" [label])))
-      ("input_22"
-           ("*input" [label]))
-      ("fact_28" (("n_42" (("binop_31" (var_loc 0))
-                   ("binop_38" (var_loc 0))
-                   ("app_37" (var_loc 1))))
-      ("body
-           ())))
+      ("equal_4"
+        (("a_10" arg_loc)
+          ("b_11" arg_loc)
+          ("*equal" [label]))))
 
     going up one on the list is your parent scope
-
     search goes up in the list, recursively checking the parent scope
-
    *)
-  let rec helpA (expr : tag aexpr) (env: arg name_envt name_envt) (si : int) : arg name_envt =
-    let ((name, curr_env), rest_env) = match env with
-    | e::rest -> (e, rest)
-    | _ -> raise (InternalCompilerError "helpA environment should never be empty") in
+  let rec helpA (expr : tag aexpr) (env: arg name_envt name_envt) (si : int) : arg name_envt name_envt =
     match expr with
-      | ASeq(bind, body, _) -> let bind_envt = (helpC bind si) in
+      | ASeq(bind, body, _) -> raise (NotYetImplemented "naive Seq") (*let bind_envt = (helpC bind si) in
                          let body_env = (helpA body (si + 1)) in
-                           (name, bind_envt @ body_env @ curr_env) :: rest
-      | ALet(id, bind, body, _) -> let bind_envt = (helpC bind si) in
+                           (name, bind_envt @ body_env @ curr_env) :: rest*)
+      | ALet(id, bind, body, _) ->
+        (* TODO: are the stack numbers correct? *)
+        let binds_env = (helpC bind env si) in
+        let post_binds_env = (addToCurrEnvt binds_env (id, RegOffset(~-si * word_size, RBP))) in
+        let body_env = (helpA body post_binds_env (si + 1)) in
+          body_env
+
+
+           
+          (*let bind_envt = (helpC bind si) in
                                    let body_env = (helpA body (si + 1)) in
-                                     bind_envt @ (id, RegOffset(~-si * word_size, RBP))::body_env
-      | ACExpr(cexpr) -> helpC cexpr si
-      | ALetRec(_binds, _body, _) -> []
+                                     bind_envt @ (id, RegOffset(~-si * word_size, RBP))::body_env*)
+      | ACExpr(cexpr) -> helpC cexpr env si
+      | ALetRec(_binds, _body, _) -> raise (NotYetImplemented "naive aletrec")
           (* TODO: Not sure what let rec needs
                 let (csi, binds_env) = List.fold_left (fun (csi, acc) (name, exp) -> 
                   let bind_body_env = helpC exp (si + List.length binds) in
@@ -780,27 +798,31 @@ let naive_stack_allocation (prog: tag aprogram) : tag aprogram * arg name_envt n
                 let body_env = (helpA body csi) in
                   binds_env @ body_env
                   *)
-  and helpC (cexpr : tag cexpr) (si : int) : arg name_envt name_envt =
+  and helpC (cexpr : tag cexpr) (env: arg name_envt name_envt) (si : int) : arg name_envt name_envt =
     match cexpr with
-      | CIf(_cond, thn, els, _) -> let thn_envt = helpA thn si in
+      | CIf(_cond, thn, els, _) -> raise (NotYetImplemented "naive cif")
+          (*let thn_envt = helpA thn si in
                                   let els_envt = helpA els si in
                                   thn_envt @ els_envt
-    (* Basically the only place a new environment should be created?
-       the environment we use for closing over free variables should be that of the parent.
-       We create a new one to pass to the body that includes the binds
-     *)
-      | CLambda(binds, body, _) -> 
-        let (_, init_env) = List.fold_left_map
+                                  *)
+      | CLambda(binds, body, _) -> raise (NotYetImplemented "naive lambda")
+        (*let (_, init_env) = List.fold_left_map
             (fun si param -> let mapping = (param, RegOffset(si * word_size, RBP)) in (si + 1, mapping))
             3 binds in
         let body_env = helpA body si in
         init_env @ body_env
-      | _ -> []
+        *)
+      | _ -> env
+  (* helper to add a variable to an environment so we don't have to do destructuring up front *)
+  and addToCurrEnvt (env : arg name_envt name_envt) (var : (string * arg)) : arg name_envt name_envt =
+    match env with
+    | (name, env)::rest -> (name, var :: env) :: rest
+    | [] -> raise (InternalCompilerError "Alet rec should always have a current environment")
   in
   match prog with
     | AProgram(body, _) -> 
                             (*let body_envt = helpA body si in*)
-                            let body_envt = helpA body [("root", [])] 1 in
+        let body_envt = helpA body [("body", [])] 1 in
                             (prog, body_envt)
 ;;
 

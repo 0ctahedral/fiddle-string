@@ -700,36 +700,55 @@ let anf (p : tag program) : unit aprogram =
 ;;
 
 let free_vars (e: 'a aexpr) : string list =
-  raise (NotYetImplemented "Implement free_vars for expressions")
+  let rec helpA (e: 'a aexpr) (env: string list) : string list =
+    match e with
+    | ASeq(e1, e2, _) -> (helpC e1 env) @ (helpA e2 env)
+    | ALet(name, e, body, _) -> (helpC e env) @ (helpA body (name::env))
+    | ALetRec(bindings, body, _) ->
+        let binding_names  = List.map (fun (name, _) -> name) bindings in
+        let binding_vars = List.flatten (List.map (fun (_, ex) -> helpC ex (binding_names @ env)) bindings) in
+        binding_vars @ (helpA body (binding_names @ env))
+    | ACExpr(cexpr) -> helpC cexpr env
+  and helpC (cexpr: 'a cexpr) (env: string list) : string list =
+    match cexpr with
+    | CIf(cond, thn, els, _) -> (helpI cond env) @ (helpA thn env) @ (helpA els env)
+    | CPrim1(_p, imm, _) -> helpI imm env
+    | CPrim2(_p, imm1, imm2, _) -> (helpI imm1 env) @ (helpI imm2 env)
+    | CApp(func, args, call_type, _) ->
+        (match call_type with
+        | Native -> []
+        | _ -> let arg_free_vars = List.flatten (List.map (fun arg -> helpI arg env) args) in
+                                         (helpI func env) @ arg_free_vars)
+    | CImmExpr(imm) -> helpI imm env
+    | CTuple(imms, _) -> List.flatten (List.map (fun imm -> helpI imm env) imms)
+    | CGetItem(tup, idx, _) -> (helpI tup env) @ (helpI idx env)
+    | CSetItem(tup, idx, v, _) -> (helpI tup env) @ (helpI idx env) @ (helpI v env)
+    | CLambda(binds, body, _) -> helpA body (binds @ env)
+  and helpI (immexpr: 'a immexpr) (env: string list) : string list =
+    match immexpr with
+    | ImmNum(_n, _) -> []
+    | ImmBool(_b, _) -> []
+    | ImmId(name, _) -> if (is_bound env name) then [] else [name]
+    | ImmNil(_) -> []
+  and is_bound (env: string list) (name: string) : bool =
+  match env with
+  | [] -> false
+  | first::rest -> (first = name) || (is_bound rest name)
+  in
+  helpA e []
 ;;
 
 (* IMPLEMENT THIS FROM YOUR PREVIOUS ASSIGNMENT *)
 let naive_stack_allocation (prog: tag aprogram) : tag aprogram * arg name_envt name_envt =
-  (* mjr - ASSUMPTION: in an Aexpr you just want to add to the most recent env, as this was created by your parent *)
   (*
-  let t = (1, 2) in
-      let (a, b) = t, m = 3
-          in a + (b * m)
 
-  (("equal_4"
-    (("a_10" loc)
-      ("b_11" loc)
-      ("*equal" [label])))
-   ("print_14"
-    (("a_19" loc)
-      ("*print" [label])))
-   ("input_22"
-     ("*input" [label]))
-   ("body
-      ("t_28" loc)
-      ("tmp_1_34" loc)
-      ("b_38" loc)
-      ("b_38" loc)
-      ("a_44" loc)
-      ("m_50" loc)
-      ("binop_54" loc))))
-
-
+letrec:
+  for each (ith) bind in the letrec:
+    - add name of bind in new environment with a si = si + i
+    - start with si = 0 and recurse on expression to get environment
+let:
+  for each (ith) bind:
+    - add to current environment with si = si + i
 
 
     let rec fact = (lambda(n):
@@ -741,15 +760,7 @@ let naive_stack_allocation (prog: tag aprogram) : tag aprogram * arg name_envt n
              fact(3)
 
 
-letrec:
-  for each (ith) bind in the letrec:
-    - add name of bind in new environment with a si = si + i
-    - start with si = 0 and recurse on expression to get environment
-let:
-  for each (ith) bind:
-    - add to current environment with si = si + i
-
-    (("body
+    (("?our_code_starts_here"
            (("equal_4" (var_loc 0))
             ("print_14" (var_loc 1))
             ("print_22" (var_loc 2))
@@ -819,7 +830,10 @@ let:
           when we execute it, we want to start at 0 right?
           but when we create it we don't want to clobber the outer env?
            *)
-          let new_env = helpA body [(env_name, args_env)] si in
+          let fv = (free_vars (ACExpr cexpr)) in
+          (* TODO: is the tuple offset corrct? *)
+          let fv_env = List.mapi (fun i x -> (x, RegOffset(word_size * (3 + i), RDI))) fv in
+          let new_env = helpA body [(env_name, fv_env @ args_env)] si in
           new_env
       | _ -> raise (InternalCompilerError "helpL should only be called on a lambda")
   (* helper to add a variable to an environment so we don't have to do destructuring up front *)
@@ -851,6 +865,9 @@ and find_var (l : arg name_envt) (name : string) : 'a option =
     | [] -> None
     | (x, loc)::rest ->
       if x == name then Some(loc) else find_var rest name
+;;
+
+;;
 
 let check_num (a: arg) (l: string) = [
     IMov(Reg(RDI), a);

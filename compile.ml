@@ -958,6 +958,7 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
               IMov(Reg(RAX), const_false);
               IOr(Reg(RAX), Reg(R11));
         ]
+
         | Print -> raise (InternalCompilerError "Should never get here")
         | PrintStack -> raise (InternalCompilerError "Print Stack not yet implemented")
     )
@@ -1050,8 +1051,22 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
             IMov(Reg(RAX), const_true);
             ILabel(done_label);
           ]
-          | CheckSize -> raise (NotYetImplemented "check size")
+          | CheckSize -> [
+
+            (* put tuple in rax *)
+            IMov(Reg(RAX), comp_e1);
+            (* put compare in r11 *)
+            IMov(Reg(R11), comp_e2);
+
+            (* don't have to convert to machine val i think
+            ISar(Reg(R11), Const(1L));*)
+          
+            (* check if too high *)
+            ICmp(Reg(R11), RegOffset(0 * word_size, RAX));
+            IJge(Label("?err_get_high_index"));
+          ]
       )
+
     | CIf(cond, thn, els, tag) -> 
         (let thn_label = sprintf "if_thn_%d" tag in
         let els_label = sprintf "if_els_%d" tag in
@@ -1061,7 +1076,7 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
           IMov(Reg(RAX), cond_imm);
           (* check if boolean *)
           ITest(Reg(RAX), HexConst(num_tag_mask));
-          IJz(Label("if_not_bool"));
+          IJz(Label("?err_if_not_bool"));
           (* compare to true *)
           ICmp(Reg(RAX), const_true);
           IJe(Label(thn_label));
@@ -1074,23 +1089,23 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
         (compile_aexpr thn si env num_args is_tail) @
         [ ILabel(done_label); ])
     | CTuple(exps, _) -> 
-        let total_offset, set_tuple = List.fold_left_map
-        (fun offset e -> (offset + 1, [IMov(Reg(RAX), (compile_imm e env)); IMov(RegOffset(offset * word_size, R15), Reg(RAX))]))
-        1 exps in
-        [
-          ILineComment("tuple starts here");
-          (* put length of tuple in heap*)
-          IMov(Reg(RAX), Const(Int64.of_int (total_offset - 1)));
-          IMov(RegOffset(0 * word_size, R15), Reg(RAX))
-        ] @ List.flatten set_tuple @
-        [
-        (* put address in RAX, mask it *)
-          IMov(Reg(RAX), Reg(R15));
-          IAdd(Reg(RAX), Const(1L));
-          IAdd(Reg(R15), Const(Int64.of_int (word_size * (total_offset + (total_offset mod 2)))));
-        (* increase the heap pointer and pad if needed *)
-          ILineComment("tuple ends here");
-        ]
+            let total_offset, set_tuple = List.fold_left_map
+            (fun offset e -> (offset + 1, [IMov(Reg(RAX), (compile_imm e env)); IMov(RegOffset(offset * word_size, R15), Reg(RAX))]))
+            1 exps in
+            [
+              ILineComment("tuple starts here");
+              (* put length of tuple in heap*)
+              IMov(Reg(RAX), Const(Int64.of_int (total_offset - 1)));
+              IMov(RegOffset(0 * word_size, R15), Reg(RAX))
+            ] @ List.flatten set_tuple @
+            [
+            (* put address in RAX, mask it *)
+              IMov(Reg(RAX), Reg(R15));
+              IAdd(Reg(RAX), Const(1L));
+              IAdd(Reg(R15), Const(Int64.of_int (word_size * (total_offset + (total_offset mod 2)))));
+            (* increase the heap pointer and pad if needed *)
+              ILineComment("tuple ends here");
+            ]
     | CGetItem(e, idx, tag) -> 
         let e_istuple = (compile_cexpr (CPrim1(IsTuple, e, tag)) si env num_args is_tail) in
         let idx_isnum = (compile_cexpr (CPrim1(IsNum, idx, tag)) si env num_args is_tail) in
@@ -1101,28 +1116,29 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
           IMov(Reg(RDI), const_true);
           ICmp(Reg(RAX), Reg(RDI));
           IMov(Reg(RAX), imm_e);
-          IJne(Label("get_not_tuple"));
+          IJne(Label("?err_get_not_tuple"));
         ]
         @ idx_isnum @
         [
+          (* TODO: not num isn't defined
           IMov(Reg(RDI), const_true);
           ICmp(Reg(RAX), Reg(RDI));
           IMov(Reg(RAX), imm_idx);
-          IJne(Label("get_not_num"));
+          IJne(Label("?err_get_not_num"));*)
 
           IMov(Reg(RAX), imm_e);
           ISub(Reg(RAX), Const(1L));
           ICmp(Reg(RAX), Const(0L));
-          IJle(Label("nil_deref"));
+          IJle(Label("?err_nil_deref"));
           
           (* put index into r11 and divide by 2 to get machine number *)
           IMov(Reg(R11), imm_idx);
           ISar(Reg(R11), Const(1L));
           ICmp(Reg(R11), Const(0L));
-          IJl(Label("get_low"));
+          IJl(Label("?err_get_low_index"));
 
           ICmp(Reg(R11), RegOffset(0 * word_size, RAX));
-          IJge(Label("get_high"));
+          IJge(Label("?err_get_high_index"));
 
           IAdd(Reg(R11), Const(1L));
           (* get value*)
@@ -1139,27 +1155,27 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
           IMov(Reg(RDI), const_true);
           ICmp(Reg(RAX), Reg(RDI));
           IMov(Reg(RAX), imm_e);
-          IJne(Label("set_not_tuple"));
+          IJne(Label("?err_set_not_tuple"));
         ]
         @ idx_isnum @
         [
-          IMov(Reg(RDI), const_true);
+          (*IMov(Reg(RDI), const_true);
           ICmp(Reg(RAX), Reg(RDI));
           IMov(Reg(RAX), imm_idx);
-          IJne(Label("set_not_num"));
+          IJne(Label("?err_set_not_num"));*)
         
           (* deref *)
           IMov(Reg(RAX), imm_e);
           ISub(Reg(RAX), Const(1L));
           ICmp(Reg(RAX), Const(0L));
-          IJle(Label("nil_deref"));
+          IJle(Label("?err_nil_deref"));
           (* put index into r11 and divide by 2 to get machine number *)
           IMov(Reg(R11), imm_idx);
           ISar(Reg(R11), Const(1L));
           ICmp(Reg(R11), Const(0L));
-          IJl(Label("set_low"));
+          IJl(Label("?err_set_low_index"));
           ICmp(Reg(R11), RegOffset(0 * word_size, RAX));
-          IJge(Label("set_high"));
+          IJge(Label("?err_set_high_index"));
 
           IAdd(Reg(R11), Const(1L));
 
@@ -1168,7 +1184,9 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
           IMov(Reg(RAX), imm_newval);
     ]
 
-    | CLambda(binds, body, tag) ->
+(*
+    
+        | CLambda(binds, body, tag) ->
         let label = sprintf "closure_%d" tag in
         let after_label = sprintf "after_%d" tag in
         let arity = List.length binds in
@@ -1277,6 +1295,9 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
         | _ -> raise (InternalCompilerError "invalid function type")
         ) 
 *)
+
+    | _ -> raise (NotYetImplemented "have to fix the rest of compile_cexpr")
+
 and compile_imm e env =
   match e with
   | ImmNum(n, _) -> Const(Int64.shift_left n 1)
@@ -1429,7 +1450,7 @@ global ?our_code_starts_here" in
                        (to_asm (native_call (Label "?error") [Const(err_OVERFLOW); Reg(RAX)]))
                        (to_asm (native_call (Label "?error") [Const(err_GET_NOT_TUPLE); Reg(scratch_reg)]))
                        (to_asm (native_call (Label "?error") [Const(err_GET_LOW_INDEX); Reg(scratch_reg)]))
-                       (to_asm (native_call (Label "?error") [Const(err_GET_HIGH_INDEX)]))
+                       (to_asm (native_call (Label "?error") [Const(err_GET_HIGH_INDEX); Reg(scratch_reg)]))
                        (to_asm (native_call (Label "?error") [Const(err_NIL_DEREF); Reg(scratch_reg)]))
                        (to_asm (native_call (Label "?error") [Const(err_OUT_OF_MEMORY); Reg(scratch_reg)]))
                        (to_asm (native_call (Label "?error") [Const(err_SET_NOT_TUPLE); Reg(scratch_reg)]))

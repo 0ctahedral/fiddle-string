@@ -21,6 +21,7 @@ type reg =
   | R14
   | R15
   | CL
+  | AL
 
 type size =
   | QWORD_PTR
@@ -95,6 +96,7 @@ let r_to_asm (r : reg) : string =
   | R14 -> "R14"
   | R15 -> "R15"
   | CL  -> "CL"
+  | AL  -> "AL"
 
 let rec arg_to_asm (a : arg) : string =
   match a with

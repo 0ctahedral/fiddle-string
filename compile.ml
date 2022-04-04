@@ -852,6 +852,34 @@ and find_var (l : arg name_envt) (name : string) : 'a option =
     | (x, loc)::rest ->
       if x == name then Some(loc) else find_var rest name
 
+let check_num (a: arg) (l: string) = [
+    IMov(Reg(RDI), a);
+    ITest(Reg(RDI), HexConst(num_tag_mask));
+    IJnz(Label(l));
+    ];;
+
+let check_arith (a: arg) = [
+    IMov(Reg(RDI), a);
+    ITest(Reg(RDI), HexConst(num_tag_mask));
+    IJnz(Label("?err_arith_not_num"));
+    ];;
+
+let check_comp (a: arg) = [
+      IMov(Reg(RDI), a);
+      ITest(Reg(RDI), HexConst(num_tag_mask));
+      IJnz(Label("?err_comp_not_num"));
+];;
+
+let check_logic (a: arg) = [
+      IMov(Reg(RDI), a);
+      ITest(Reg(RDI), HexConst(num_tag_mask));
+      IJz(Label("?err_logic_not_bool"));
+];;
+
+let check_overflow = [
+      IJo(Label("?err_overflow"));
+];;
+
 let rec compile_aexpr (e : tag aexpr) (si : int) (env : arg name_envt name_envt) (num_args : int) (is_tail : bool) : instruction list =
   match e with
     | ALet(name, bind, body, _tag) -> let comp_bind = (compile_cexpr bind si env num_args false) in
@@ -862,7 +890,9 @@ let rec compile_aexpr (e : tag aexpr) (si : int) (env : arg name_envt name_envt)
     | ASeq(bind, body, _) -> let comp_bind = (compile_cexpr bind si env num_args false) in
                                      let comp_body = (compile_aexpr body si env num_args is_tail) in
                                      comp_bind @ comp_body
-    | ALetRec([(name, lambda)], body, _) -> [] (*let store_closure_ptr = [
+    | ALetRec([(name, lambda)], body, _) -> raise (NotYetImplemented "comp aletrec")
+
+        (*let store_closure_ptr = [
                                             IMov(Reg(RAX), Reg(R15));
                                             IAdd(Reg(RAX), Const(closure_tag));
                                             IMov((find env name), Reg(RAX));
@@ -874,9 +904,6 @@ let rec compile_aexpr (e : tag aexpr) (si : int) (env : arg name_envt name_envt)
 and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (num_args : int) (is_tail : bool) : instruction list =
   match e with
     | CImmExpr(imm) -> [IMov(Reg(RAX), compile_imm imm env)]
-    | _ -> raise (NotYetImplemented "have to fix the rest of compile_cexpr")
-
-(*and compile_cexpr (e : tag cexpr) si env num_args is_tail =
     | CPrim1(prim1, imm, tag) -> (let imm_arg = (compile_imm imm env) in
       match prim1 with
         | Add1 -> (check_arith imm_arg) @ [
@@ -886,7 +913,7 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
         | Sub1 -> (check_arith imm_arg) @ [
             IMov(Reg(RAX), imm_arg);
             ISub(Reg(RAX), Const(2L));
-            IJo(Label("overflow"));
+            IJo(Label("?err_overflow"));
         ]
         | Not -> let is_true_label = sprintf "is_true_%d" tag in
                   let done_label = sprintf "done_%d" tag in
@@ -932,8 +959,9 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
               IOr(Reg(RAX), Reg(R11));
         ]
         | Print -> raise (InternalCompilerError "Should never get here")
-        | PrintStack -> raise (InternalCompilerError "Print not yet implemented")
+        | PrintStack -> raise (InternalCompilerError "Print Stack not yet implemented")
     )
+
     | CPrim2(prim2, e1, e2, tag) -> 
         (let comp_e1 = (compile_imm e1 env) in
         let comp_e2 = (compile_imm e2 env) in
@@ -954,7 +982,7 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
             IMov(Reg(RAX), comp_e1);
             IMov(Reg(RDI), comp_e2);
             IMul(Reg(RAX), Reg(RDI));
-            IJo(Label("overflow"));
+            IJo(Label("?err_overflow"));
             ISar(Reg(RAX), Const(1L));
           ]
           | And -> check_logic(comp_e1) @ check_logic(comp_e2) @ [

@@ -35,6 +35,10 @@ let teq name actual expected = name>::fun _ ->
 
 let builtins_size = 4 (* arity + 0 vars + codeptr + padding *) * 1 (* TODO FIXME (List.length Compile.native_fun_bindings) *)
 
+let simple = [
+  t "five" "5" "" "5";
+]
+
 let pair_tests = [
   t "tup1" "let t = (4, (5, 6)) in
             begin
@@ -86,7 +90,9 @@ let input = [
 
 let suite =
 "unit_tests">:::
- pair_tests @ oom @ gc @ input
+ (* pair_tests @ oom @ gc @ input*)
+  simple
+
 
 
 

@@ -835,23 +835,428 @@ let:
   match prog with
     | AProgram(body, _) -> 
                             (*let body_envt = helpA body si in*)
-        let body_envt = helpA body [("body", [])] 1 in
+        let body_envt = helpA body [("?our_code_starts_here", [])] 1 in
                             (prog, body_envt)
 ;;
 
-let count_vars e =
-  let rec helpA e =
-    match e with
-    | ASeq(e1, e2, _) -> max (helpC e1) (helpA e2)
-    | ALet(_, bind, body, _) -> 1 + (max (helpC bind) (helpA body))
-    | ALetRec(binds, body, _) ->
-       (List.length binds) + List.fold_left max (helpA body) (List.map (fun (_, rhs) -> helpC rhs) binds)
-    | ACExpr e -> helpC e
-  and helpC e =
-    match e with
-    | CIf(_, t, f, _) -> max (helpA t) (helpA f)
-    | _ -> 0
-  in helpA e
+let rec find_var_envt (env : arg name_envt name_envt) (name : string) = 
+  match env with
+  | [] -> raise (InternalCompilerError "")
+  | (_, cenv)::rest ->
+      match find_var cenv name with
+      | Some(loc) -> loc
+      | None -> find_var_envt rest name
+and find_var (l : arg name_envt) (name : string) : 'a option =
+  match l with
+    | [] -> None
+    | (x, loc)::rest ->
+      if x == name then Some(loc) else find_var rest name
+
+let rec compile_aexpr (e : tag aexpr) (si : int) (env : arg name_envt name_envt) (num_args : int) (is_tail : bool) : instruction list =
+  match e with
+    | ALet(name, bind, body, _tag) -> let comp_bind = (compile_cexpr bind si env num_args false) in
+                                     let comp_body = (compile_aexpr body si env num_args is_tail) in
+                                     [ILineComment("let starts here");] @ comp_bind @ [IMov((find_var_envt env name), Reg(RAX))] @ comp_body
+          
+    | ACExpr(cexpr) -> (compile_cexpr cexpr si env num_args is_tail)
+    | ASeq(bind, body, _) -> let comp_bind = (compile_cexpr bind si env num_args false) in
+                                     let comp_body = (compile_aexpr body si env num_args is_tail) in
+                                     comp_bind @ comp_body
+    | ALetRec([(name, lambda)], body, _) -> [] (*let store_closure_ptr = [
+                                            IMov(Reg(RAX), Reg(R15));
+                                            IAdd(Reg(RAX), Const(closure_tag));
+                                            IMov((find env name), Reg(RAX));
+                                            ] in
+                                            let comp_lambda = (compile_cexpr lambda si env num_args is_tail) in
+                                            let comp_body = (compile_aexpr body si env num_args is_tail) in
+                                            store_closure_ptr @ comp_lambda @ comp_body*)
+    | ALetRec(_, _, _) -> raise (InternalCompilerError "Mutually recursive functions not implemented")
+and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (num_args : int) (is_tail : bool) : instruction list =
+  match e with
+    | CImmExpr(imm) -> [IMov(Reg(RAX), compile_imm imm env)]
+    | _ -> raise (NotYetImplemented "have to fix the rest of compile_cexpr")
+
+(*and compile_cexpr (e : tag cexpr) si env num_args is_tail =
+    | CPrim1(prim1, imm, tag) -> (let imm_arg = (compile_imm imm env) in
+      match prim1 with
+        | Add1 -> (check_arith imm_arg) @ [
+            IMov(Reg(RAX), imm_arg);
+            IAdd(Reg(RAX), Const(2L));
+        ] @ check_overflow
+        | Sub1 -> (check_arith imm_arg) @ [
+            IMov(Reg(RAX), imm_arg);
+            ISub(Reg(RAX), Const(2L));
+            IJo(Label("overflow"));
+        ]
+        | Not -> let is_true_label = sprintf "is_true_%d" tag in
+                  let done_label = sprintf "done_%d" tag in
+              (check_logic imm_arg) @ [
+              IMov(Reg(RAX), imm_arg);
+              IXor(Reg(RAX), HexConst(0xFFFFFFFFFFFFFFFFL));
+              ITest(Reg(RAX), HexConst(0xFFFFFFFFFFFFFFFFL));
+              IJz(Label(is_true_label));
+              IMov(Reg(RAX), const_true);
+              IJmp(Label(done_label));
+              ILabel(is_true_label);
+              IMov(Reg(RAX), const_false);
+              ILabel(done_label);
+            ]
+        | IsBool -> [
+              IMov(Reg(RAX), imm_arg);
+              IAnd(Reg(RAX), Const(bool_tag_mask));
+              IMov(Reg(R11), Const(1L));
+              IMov(Reg(CL), Reg(AL));
+              IShl(Reg(R11), Reg(CL));
+              IShl(Reg(R11), Const(Int64.sub 63L bool_tag));
+              IMov(Reg(RAX), const_false);
+              IOr(Reg(RAX), Reg(R11));
+            ]
+        | IsNum -> [
+              IMov(Reg(RAX), imm_arg);
+              IAnd(Reg(RAX), Const(num_tag_mask));
+              IMov(Reg(R11), Const(1L));
+              IMov(Reg(CL), Reg(AL));
+              IShl(Reg(R11), Reg(CL));
+              IShl(Reg(R11), Const(Int64.sub 63L num_tag));
+              IMov(Reg(RAX), const_false);
+              IOr(Reg(RAX), Reg(R11));
+            ]
+        | IsTuple -> [
+              IMov(Reg(RAX), imm_arg);
+              IAnd(Reg(RAX), Const(tuple_tag_mask));
+              IMov(Reg(R11), Const(1L));
+              IMov(Reg(CL), Reg(AL));
+              IShl(Reg(R11), Reg(CL));
+              IShl(Reg(R11), Const(Int64.sub 63L tuple_tag));
+              IMov(Reg(RAX), const_false);
+              IOr(Reg(RAX), Reg(R11));
+        ]
+        | Print -> raise (InternalCompilerError "Should never get here")
+        | PrintStack -> raise (InternalCompilerError "Print not yet implemented")
+    )
+    | CPrim2(prim2, e1, e2, tag) -> 
+        (let comp_e1 = (compile_imm e1 env) in
+        let comp_e2 = (compile_imm e2 env) in
+        let is_true_label = sprintf "is_true_%d" tag in
+        let done_label = sprintf "done_%d" tag in
+          match prim2 with
+          | Plus -> check_arith(comp_e1) @ check_arith(comp_e2) @ [
+            IMov(Reg(RAX), comp_e1);
+            IMov(Reg(RDI), comp_e2);
+            IAdd(Reg(RAX), Reg(RDI));
+          ] @ check_overflow
+          | Minus -> check_arith(comp_e1) @ check_arith(comp_e2) @ [
+            IMov(Reg(RAX), comp_e1);
+            IMov(Reg(RDI), comp_e2);
+            ISub(Reg(RAX), Reg(RDI));
+          ] @ check_overflow
+          | Times -> check_arith(comp_e1) @ check_arith(comp_e2) @ [
+            IMov(Reg(RAX), comp_e1);
+            IMov(Reg(RDI), comp_e2);
+            IMul(Reg(RAX), Reg(RDI));
+            IJo(Label("overflow"));
+            ISar(Reg(RAX), Const(1L));
+          ]
+          | And -> check_logic(comp_e1) @ check_logic(comp_e2) @ [
+            IMov(Reg(RAX), comp_e1);
+            IMov(Reg(RDI), comp_e2);
+            IAnd(Reg(RAX), Reg(RDI));
+          ]
+          | Or -> check_logic(comp_e1) @ check_logic(comp_e2) @ [
+            IMov(Reg(RAX), comp_e1);
+            IMov(Reg(RDI), comp_e2);
+            IOr(Reg(RAX), Reg(RDI));
+          ]
+          | Greater -> check_comp(comp_e1) @ check_comp(comp_e2) @ [
+            IMov(Reg(RAX), comp_e1);
+            IMov(Reg(RDI), comp_e2);
+            ICmp(Reg(RAX), Reg(RDI));
+            IJg(Label(is_true_label));
+            IMov(Reg(RAX), const_false);
+            IJmp(Label(done_label));
+            ILabel(is_true_label);
+            IMov(Reg(RAX), const_true);
+            ILabel(done_label);
+          ]
+          | GreaterEq -> check_comp(comp_e1) @ check_comp(comp_e2) @ [
+            IMov(Reg(RAX), comp_e1);
+            IMov(Reg(RDI), comp_e2);
+            ICmp(Reg(RAX), Reg(RDI));
+            IJge(Label(is_true_label));
+            IMov(Reg(RAX), const_false);
+            IJmp(Label(done_label));
+            ILabel(is_true_label);
+            IMov(Reg(RAX), const_true);
+            ILabel(done_label);
+          ]
+          | Less -> check_comp(comp_e1) @ check_comp(comp_e2) @ [
+            IMov(Reg(RAX), comp_e1);
+            IMov(Reg(RDI), comp_e2);
+            ICmp(Reg(RAX), Reg(RDI));
+            IJl(Label(is_true_label));
+            IMov(Reg(RAX), const_false);
+            IJmp(Label(done_label));
+            ILabel(is_true_label);
+            IMov(Reg(RAX), const_true);
+            ILabel(done_label);
+          ]
+          | LessEq -> check_comp(comp_e1) @ check_comp(comp_e2) @ [
+            IMov(Reg(RAX), comp_e1);
+            IMov(Reg(RDI), comp_e2);
+            ICmp(Reg(RAX), Reg(RDI));
+            IJle(Label(is_true_label));
+            IMov(Reg(RAX), const_false);
+            IJmp(Label(done_label));
+            ILabel(is_true_label);
+            IMov(Reg(RAX), const_true);
+            ILabel(done_label);
+          ]
+          | Eq -> [
+            IMov(Reg(RAX), comp_e1);
+            IMov(Reg(RDI), comp_e2);
+            ICmp(Reg(RAX), Reg(RDI));
+            IJe(Label(is_true_label));
+            IMov(Reg(RAX), const_false);
+            IJmp(Label(done_label));
+            ILabel(is_true_label);
+            IMov(Reg(RAX), const_true);
+            ILabel(done_label);
+          ]
+          | CheckSize -> raise (NotYetImplemented "check size")
+      )
+    | CIf(cond, thn, els, tag) -> 
+        (let thn_label = sprintf "if_thn_%d" tag in
+        let els_label = sprintf "if_els_%d" tag in
+        let done_label = sprintf "if_done_%d" tag in
+        let cond_imm = (compile_imm cond env) in
+        [
+          IMov(Reg(RAX), cond_imm);
+          (* check if boolean *)
+          ITest(Reg(RAX), HexConst(num_tag_mask));
+          IJz(Label("if_not_bool"));
+          (* compare to true *)
+          ICmp(Reg(RAX), const_true);
+          IJe(Label(thn_label));
+        ] @
+        (*els label and condition, jump to done*)
+        [ ILabel(els_label); ] @
+        (compile_aexpr els si env num_args is_tail) @
+        [ IJmp(Label(done_label));
+          ILabel(thn_label); ] @
+        (compile_aexpr thn si env num_args is_tail) @
+        [ ILabel(done_label); ])
+    | CTuple(exps, _) -> 
+        let total_offset, set_tuple = List.fold_left_map
+        (fun offset e -> (offset + 1, [IMov(Reg(RAX), (compile_imm e env)); IMov(RegOffset(offset * word_size, R15), Reg(RAX))]))
+        1 exps in
+        [
+          ILineComment("tuple starts here");
+          (* put length of tuple in heap*)
+          IMov(Reg(RAX), Const(Int64.of_int (total_offset - 1)));
+          IMov(RegOffset(0 * word_size, R15), Reg(RAX))
+        ] @ List.flatten set_tuple @
+        [
+        (* put address in RAX, mask it *)
+          IMov(Reg(RAX), Reg(R15));
+          IAdd(Reg(RAX), Const(1L));
+          IAdd(Reg(R15), Const(Int64.of_int (word_size * (total_offset + (total_offset mod 2)))));
+        (* increase the heap pointer and pad if needed *)
+          ILineComment("tuple ends here");
+        ]
+    | CGetItem(e, idx, tag) -> 
+        let e_istuple = (compile_cexpr (CPrim1(IsTuple, e, tag)) si env num_args is_tail) in
+        let idx_isnum = (compile_cexpr (CPrim1(IsNum, idx, tag)) si env num_args is_tail) in
+        let imm_e = compile_imm e env in
+        let imm_idx = compile_imm idx env in
+        e_istuple @
+        [
+          IMov(Reg(RDI), const_true);
+          ICmp(Reg(RAX), Reg(RDI));
+          IMov(Reg(RAX), imm_e);
+          IJne(Label("get_not_tuple"));
+        ]
+        @ idx_isnum @
+        [
+          IMov(Reg(RDI), const_true);
+          ICmp(Reg(RAX), Reg(RDI));
+          IMov(Reg(RAX), imm_idx);
+          IJne(Label("get_not_num"));
+
+          IMov(Reg(RAX), imm_e);
+          ISub(Reg(RAX), Const(1L));
+          ICmp(Reg(RAX), Const(0L));
+          IJle(Label("nil_deref"));
+          
+          (* put index into r11 and divide by 2 to get machine number *)
+          IMov(Reg(R11), imm_idx);
+          ISar(Reg(R11), Const(1L));
+          ICmp(Reg(R11), Const(0L));
+          IJl(Label("get_low"));
+
+          ICmp(Reg(R11), RegOffset(0 * word_size, RAX));
+          IJge(Label("get_high"));
+
+          IAdd(Reg(R11), Const(1L));
+          (* get value*)
+          IMov(Reg(RAX), RegOffsetReg(RAX, R11, word_size, 0));
+        ]
+    | CSetItem(e, idx, newval, tag) ->
+        let e_istuple = (compile_cexpr (CPrim1(IsTuple, e, tag)) si env num_args is_tail) in
+        let idx_isnum = (compile_cexpr (CPrim1(IsNum, idx, tag)) si env num_args is_tail) in
+        let imm_e = compile_imm e env in
+        let imm_idx = compile_imm idx env in
+        let imm_newval = compile_imm newval env in
+        e_istuple @
+        [
+          IMov(Reg(RDI), const_true);
+          ICmp(Reg(RAX), Reg(RDI));
+          IMov(Reg(RAX), imm_e);
+          IJne(Label("set_not_tuple"));
+        ]
+        @ idx_isnum @
+        [
+          IMov(Reg(RDI), const_true);
+          ICmp(Reg(RAX), Reg(RDI));
+          IMov(Reg(RAX), imm_idx);
+          IJne(Label("set_not_num"));
+        
+          (* deref *)
+          IMov(Reg(RAX), imm_e);
+          ISub(Reg(RAX), Const(1L));
+          ICmp(Reg(RAX), Const(0L));
+          IJle(Label("nil_deref"));
+          (* put index into r11 and divide by 2 to get machine number *)
+          IMov(Reg(R11), imm_idx);
+          ISar(Reg(R11), Const(1L));
+          ICmp(Reg(R11), Const(0L));
+          IJl(Label("set_low"));
+          ICmp(Reg(R11), RegOffset(0 * word_size, RAX));
+          IJge(Label("set_high"));
+
+          IAdd(Reg(R11), Const(1L));
+
+          IMov(Reg(RDI), imm_newval);
+          IMov(RegOffsetReg(RAX, R11, word_size, 0), Reg(RDI));
+          IMov(Reg(RAX), imm_newval);
+    ]
+
+    | CLambda(binds, body, tag) ->
+        let label = sprintf "closure_%d" tag in
+        let after_label = sprintf "after_%d" tag in
+        let arity = List.length binds in
+        let exec_env = lambda_stack_alloc e in
+        let stack_slots = (deepest_stack body exec_env) in
+        let stack_slots = stack_slots + (stack_slots mod 2) in
+        let closed_vars = free_vars (ACExpr(e)) in
+        (* 3 words for arity, code ptr, and # of vars closed over, plus a word for each var *)
+        let total_offset = 3 + (List.length closed_vars) in
+        [
+          IJmp(Label(after_label));
+          ILabel(label); 
+          IPush(Reg(RBP));
+          IMov(Reg(RBP), Reg(RSP));
+          (* Reserve stack space *)
+          IAdd(Reg(RSP), Const(Int64.of_int (-1 * word_size * stack_slots)));
+          (* Get pointer to closure on heap, which is first argument *)
+          IMov(Reg(RAX), RegOffset(2 * word_size, RBP));
+          ISub(Reg(RAX), Const(closure_tag));
+        ]
+        @
+        (* Get values out of closure and onto stack *)
+        (List.flatten (List.mapi (fun i name -> [
+          IMov(Reg(RDI), RegOffset(word_size * (i + 3), RAX));
+          IMov((find exec_env name), Reg(RDI));
+        ]) closed_vars))
+        @
+          [ILabel(sprintf "%s_body" label)]
+        @ (compile_aexpr body si exec_env (List.length binds) is_tail) @ [
+          IMov(Reg(RSP), Reg(RBP));
+          IPop(Reg(RBP));
+          IRet;
+        ] @ [
+          ILabel(after_label);
+          (* arity *)
+          IMov(Reg(RAX), Const(Int64.of_int arity));
+          IMov(RegOffset(0 * word_size, R15), Reg(RAX));
+          (* code ptr *)
+          IMov(Reg(RAX), Label(label));
+          IMov(RegOffset(1 * word_size, R15), Reg(RAX));
+          (* number of closed over vars *)
+          IMov(Reg(RAX), Const(Int64.of_int (List.length closed_vars)));
+          IMov(RegOffset(2 * word_size, R15), Reg(RAX));
+        ] @
+        (List.flatten (List.mapi (fun i name -> [
+          IMov(Reg(RAX), (find env name));
+          IMov(RegOffset(word_size * (i + 3), R15), Reg(RAX));
+        ]) closed_vars))
+        @ [
+        (* pad, put address in RAX, mask it *)
+          IMov(Reg(RAX), Reg(R15));
+          IAdd(Reg(RAX), Const(closure_tag));
+        (* increase the heap pointer and pad if needed *)
+          IAdd(Reg(R15), Const(Int64.of_int (word_size * (total_offset + (total_offset mod 2)))));
+          ILineComment("end of lambda");
+        ]
+    | CApp(lambda_id, args, call_type, _) ->
+        (match call_type with
+        | Native -> 
+            let rec push_args (args: arg list) (regs: reg list) : instruction list * instruction list =
+              match args with
+              | [] -> ([], [])
+              | arg::rest -> match regs with
+                              | [] -> let (rest_push, rest_pop) = (push_args rest regs) in
+                                      (IPush(arg)::rest_push, rest_pop @ [IPop(Reg(RDI))])
+                              | reg::regs -> let (rest_push, rest_pop) = (push_args rest regs) in
+                                      (IMov(Reg(reg), arg)::rest_push, rest_pop)
+            in
+            let (pushes, pops) = push_args (List.map (fun arg -> compile_imm arg env) args) first_six_args_registers in
+            let name = (match lambda_id with
+             | ImmId(name, _) -> name
+             | _ -> raise (InternalCompilerError "expected id")
+             ) in
+            pushes @ [ICall(Label(name))] @ pops
+        | Snake ->
+          let push_all = List.flatten (List.map (fun arg -> [IMov(Reg(R11), (compile_imm arg env)); IPush(Reg(R11))]) (List.rev args)) in
+          let pop_all = (List.map (fun _ -> IPop(Reg(RDI))) args) in
+          (*let _, place_all = List.fold_left_map (fun i arg -> 
+            (i + 1, [
+                      IMov(Reg(RAX), (compile_imm arg env));
+                      IMov(RegOffset(i * word_size, RBP), Reg(RAX))
+                    ])
+          ) 2 args in*)
+          [
+            IMov(Reg(RAX), (compile_imm lambda_id env));
+            IMov(Reg(R11), Reg(RAX));
+            IAnd(Reg(R11), HexConst(closure_tag_mask));
+            ICmp(Reg(R11), HexConst(closure_tag));
+            IJne(Label("call_not_closure"));
+          ] @
+          (if (is_tail && (List.length args) <= num_args) then
+          [ILineComment("tailcall methinks");] else [])(*@ List.flatten place_all @ [IJmp() ] else []) @*)
+          @ push_all @  
+          [
+            (* push pointer as argument *)
+            IPush(Reg(RAX));
+            ISub(Reg(RAX), Const(closure_tag));
+            IMov(Reg(R11), RegOffset(word_size * 0, RAX));
+            ICmp(Reg(R11), Const(Int64.of_int (List.length args)));
+            IJne(Label("call_arity"));
+            (* Untag and call code pointer, which is second word in lambda *)
+            ICall(RegOffset(word_size * 1, RAX));
+            IPop(Reg(RDI));
+          ] @ pop_all
+
+        | _ -> raise (InternalCompilerError "invalid function type")
+        ) 
+*)
+and compile_imm e env =
+  match e with
+  | ImmNum(n, _) -> Const(Int64.shift_left n 1)
+  | ImmBool(true, _) -> const_true
+  | ImmBool(false, _) -> const_false
+  | ImmId(x, _) -> (find_var_envt env x)
+  | ImmNil(_) -> HexConst(0x01L)
+;;
 
 let rec replicate x i =
   if i = 0 then []
@@ -881,7 +1286,27 @@ and reserve size tag =
 (* Additionally, you are provided an initial environment of values that you may want to
    assume should take up the first few stack slots.  See the compiliation of Programs
    below for one way to use this ability... *)
-and compile_fun name args body initial_env = raise (NotYetImplemented "NYI: compile_fun")
+ and compile_fun name args body (initial_env: arg name_envt name_envt) = (
+   let env = find initial_env name in
+   let stack_size = List.length env in
+   [
+   ILineComment("prologue");
+   IPush(Reg(RBP));
+   IMov(Reg(RBP), Reg(RSP));
+   IAdd(Reg(RSP), Const(Int64.of_int (~-word_size * (stack_size + (stack_size mod 2)))));
+   ILineComment(sprintf "num vars: %d" (List.length env));
+   ],
+   [ (* TODO: compile body*)
+     ILineComment("body")
+
+   ] @ (compile_aexpr body 0 initial_env (List.length args) false),
+   [
+   ILineComment("pop arguments and return?");
+   IMov(Reg(RSP), Reg(RBP));
+   IPop(Reg(RBP));
+   IRet;
+   ])
+
 
 and args_help args regs =
   match args, regs with

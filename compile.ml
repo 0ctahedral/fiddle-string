@@ -862,10 +862,13 @@ let find_var_in_envt (env : arg name_envt name_envt) (var : string) (env_name : 
         match find_var cenv name with
         | Some(loc) -> loc
         | None -> find_var_envt rest name in
-  let targ_env = find_env env env_name in
-  match find_var targ_env var with
-  | None -> find_var_envt env var
-  | Some(loc) -> loc
+  if env_name = "" then
+    find_var_envt env var
+  else
+    let targ_env = find_env env env_name in
+      match find_var targ_env var with
+      | None -> find_var_envt env var
+      | Some(loc) -> loc
 ;;
 
 let check_num (a: arg) (l: string) = [
@@ -1302,7 +1305,7 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
       IMov(RegOffset(2 * word_size, R15), Reg(RAX));
     ] @
     (List.flatten (List.mapi (fun i var -> [
-      IMov(Reg(RAX), (find_var_in_envt env var name));
+      IMov(Reg(RAX), (find_var_in_envt env var ""));
       IMov(RegOffset(word_size * (i + 3), R15), Reg(RAX));
     ]) closed_vars))
     @ [

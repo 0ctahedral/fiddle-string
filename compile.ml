@@ -731,9 +731,9 @@ let free_vars (e: 'a aexpr) : string list =
     | ImmId(name, _) -> if (is_bound env name) then [] else [name]
     | ImmNil(_) -> []
   and is_bound (env: string list) (name: string) : bool =
-  match env with
-  | [] -> false
-  | first::rest -> (first = name) || (is_bound rest name)
+    match env with
+    | [] -> false
+    | first::rest -> (first = name) || (is_bound rest name)
   in
   helpA e []
 ;;
@@ -823,17 +823,16 @@ let:
              This allows us to look for the most recent variable declaration and use that name for
              this new environment *)
           let env_name = get_last_var env in
-          let args_env = List.mapi (fun i name ->
-            (name, RegOffset((i + 3) * word_size, RBP))) args in
-          (* TODO:
-          where should the stack inside a lambda start? 
-          when we execute it, we want to start at 0 right?
-          but when we create it we don't want to clobber the outer env?
-           *)
+          let new_si, args_env = List.fold_left (fun (new_si, args_env) name ->
+            (*(name, RegOffset((i + 3) * word_size, RBP))) args in*)
+            (* NEW STRAT: put all variables on the stack and it is the job of the setup to get them out *)
+            (new_si + 1, (name, RegOffset(~-new_si * word_size, RBP))::args_env)) (1, []) args in
           let fv = (free_vars (ACExpr cexpr)) in
           (* TODO: is the tuple offset corrct? *)
-          let fv_env = List.mapi (fun i x -> (x, RegOffset(word_size * (3 + i), RDI))) fv in
-          let new_env = helpA body [(env_name, fv_env @ args_env)] si in
+          let new_si, fv_env = List.fold_left (fun (new_si, fv_env) x ->
+            (new_si + 1, (x, RegOffset(~-new_si * word_size, RBP)) :: fv_env)
+          ) (new_si, []) fv  in
+          let new_env = helpA body [(env_name, fv_env @ args_env)] new_si in
           new_env
       | _ -> raise (InternalCompilerError "helpL should only be called on a lambda")
   (* helper to add a variable to an environment so we don't have to do destructuring up front *)
@@ -897,14 +896,59 @@ let check_overflow = [
       IJo(Label("?err_overflow"));
 ];;
 
-let rec compile_aexpr (e : tag aexpr) (si : int) (env : arg name_envt name_envt) (num_args : int) (is_tail : bool) : instruction list =
+let rec replicate x i =
+  if i = 0 then []
+  else x :: (replicate x (i - 1))
+
+and reserve size tag =
+  let ok = sprintf "$memcheck_%d" tag in
+  [
+    IInstrComment(IMov(Reg(RAX), LabelContents("?HEAP_END")),
+                 sprintf "Reserving %d words" (size / word_size));
+    ISub(Reg(RAX), Const(Int64.of_int size));
+    ICmp(Reg(RAX), Reg(heap_reg));
+    IJge(Label ok);
+  ]
+  @ (native_call (Label "?try_gc") [
+         (Sized(QWORD_PTR, Reg(heap_reg))); (* alloc_ptr in C *)
+         (Sized(QWORD_PTR, Const(Int64.of_int size))); (* bytes_needed in C *)
+         (Sized(QWORD_PTR, Reg(RBP))); (* first_frame in C *)
+         (Sized(QWORD_PTR, Reg(RSP))); (* stack_top in C *)
+    ])
+  @ [
+      IInstrComment(IMov(Reg(heap_reg), Reg(RAX)), "assume gc success if returning here, so RAX holds the new heap_reg value");
+      ILabel(ok);
+    ]
+
+(* IMPLEMENT THIS FROM YOUR PREVIOUS ASSIGNMENT *)
+(* Additionally, you are provided an initial environment of values that you may want to
+   assume should take up the first few stack slots.  See the compiliation of Programs
+   below for one way to use this ability... *)
+ and compile_fun name args body (initial_env: arg name_envt name_envt) = (
+   let env = find initial_env name in
+   let stack_size = List.length env in
+   let arity = (List.length args) in
+   [
+   ILineComment("prologue");
+   IPush(Reg(RBP));
+   IMov(Reg(RBP), Reg(RSP));
+   IAdd(Reg(RSP), Const(Int64.of_int (~-word_size * (stack_size + (stack_size mod 2)))));
+   ],
+   [ ILineComment("body") ] @ (compile_aexpr body 0 initial_env arity false),
+   [
+   ILineComment("pop arguments and return?");
+   IMov(Reg(RSP), Reg(RBP));
+   IPop(Reg(RBP));
+   IRet;
+   ])
+and compile_aexpr (e : tag aexpr) (si : int) (env : arg name_envt name_envt) (num_args : int) (is_tail : bool) : instruction list =
   match e with
-    | ALet(name, bind, body, _tag) -> let comp_bind = (compile_cexpr bind si env num_args false) in
+    | ALet(name, bind, body, _tag) -> let comp_bind = (compile_cexpr bind si env num_args false name) in
                                      let comp_body = (compile_aexpr body si env num_args is_tail) in
                                      [ILineComment("let starts here");] @ comp_bind @ [IMov((find_var_envt env name), Reg(RAX))] @ comp_body
           
-    | ACExpr(cexpr) -> (compile_cexpr cexpr si env num_args is_tail)
-    | ASeq(bind, body, _) -> let comp_bind = (compile_cexpr bind si env num_args false) in
+    | ACExpr(cexpr) -> (compile_cexpr cexpr si env num_args is_tail "")
+    | ASeq(bind, body, _) -> let comp_bind = (compile_cexpr bind si env num_args false "") in
                                      let comp_body = (compile_aexpr body si env num_args is_tail) in
                                      comp_bind @ comp_body
     | ALetRec([(name, lambda)], body, _) -> raise (NotYetImplemented "comp aletrec")
@@ -918,7 +962,7 @@ let rec compile_aexpr (e : tag aexpr) (si : int) (env : arg name_envt name_envt)
                                             let comp_body = (compile_aexpr body si env num_args is_tail) in
                                             store_closure_ptr @ comp_lambda @ comp_body*)
     | ALetRec(_, _, _) -> raise (InternalCompilerError "Mutually recursive functions not implemented")
-and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (num_args : int) (is_tail : bool) : instruction list =
+and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (num_args : int) (is_tail : bool) (name: string): instruction list =
   match e with
     | CImmExpr(imm) -> [IMov(Reg(RAX), compile_imm imm env)]
     | CPrim1(prim1, imm, tag) -> (let imm_arg = (compile_imm imm env) in
@@ -1121,8 +1165,8 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
               ILineComment("tuple ends here");
             ]
     | CGetItem(e, idx, tag) -> 
-        let e_istuple = (compile_cexpr (CPrim1(IsTuple, e, tag)) si env num_args is_tail) in
-        let idx_isnum = (compile_cexpr (CPrim1(IsNum, idx, tag)) si env num_args is_tail) in
+        let e_istuple = (compile_cexpr (CPrim1(IsTuple, e, tag)) si env num_args is_tail "") in
+        let idx_isnum = (compile_cexpr (CPrim1(IsNum, idx, tag)) si env num_args is_tail "") in
         let imm_e = compile_imm e env in
         let imm_idx = compile_imm idx env in
         e_istuple @
@@ -1160,8 +1204,8 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
           IMov(Reg(RAX), RegOffsetReg(RAX, R11, word_size, 0));
         ]
     | CSetItem(e, idx, newval, tag) ->
-        let e_istuple = (compile_cexpr (CPrim1(IsTuple, e, tag)) si env num_args is_tail) in
-        let idx_isnum = (compile_cexpr (CPrim1(IsNum, idx, tag)) si env num_args is_tail) in
+        let e_istuple = (compile_cexpr (CPrim1(IsTuple, e, tag)) si env num_args is_tail "") in
+        let idx_isnum = (compile_cexpr (CPrim1(IsNum, idx, tag)) si env num_args is_tail "") in
         let imm_e = compile_imm e env in
         let imm_idx = compile_imm idx env in
         let imm_newval = compile_imm newval env in
@@ -1199,119 +1243,130 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
           IMov(Reg(RAX), imm_newval);
     ]
 
-(*
-    
-        | CLambda(binds, body, tag) ->
-        let label = sprintf "closure_%d" tag in
-        let after_label = sprintf "after_%d" tag in
-        let arity = List.length binds in
-        let exec_env = lambda_stack_alloc e in
-        let stack_slots = (deepest_stack body exec_env) in
-        let stack_slots = stack_slots + (stack_slots mod 2) in
-        let closed_vars = free_vars (ACExpr(e)) in
-        (* 3 words for arity, code ptr, and # of vars closed over, plus a word for each var *)
-        let total_offset = 3 + (List.length closed_vars) in
+    | CLambda(binds, body, tag) ->
+
+    let label = sprintf "closure_%d" tag in
+    let after_label = sprintf "after_%d" tag in
+    let arity = List.length binds in
+    let exec_env = [(name, find env name)]  in
+    let closed_vars = free_vars (ACExpr(e)) in
+    (* 3 words for arity, code ptr, and # of vars closed over, plus a word for each var *)
+    let total_offset = 3 + (List.length closed_vars) in
+    let (prologue, fnbody, epilogue) = compile_fun name binds body exec_env in
+    [
+      ILineComment("begin lambda");
+      IJmp(Label(after_label));
+      ILabel(label); 
+    ] @ prologue @
+    [
+      ILineComment("get closure from heap");
+      (* Get pointer to closure on heap, which is first argument *)
+      IMov(Reg(RAX), RegOffset(2 * word_size, RBP));
+      ISub(Reg(RAX), Const(closure_tag));
+
+      ILineComment(sprintf "args on stack (%d)" arity);
+    ] @ List.flatten (List.mapi (fun i arg ->
         [
-          IJmp(Label(after_label));
-          ILabel(label); 
-          IPush(Reg(RBP));
-          IMov(Reg(RBP), Reg(RSP));
-          (* Reserve stack space *)
-          IAdd(Reg(RSP), Const(Int64.of_int (-1 * word_size * stack_slots)));
-          (* Get pointer to closure on heap, which is first argument *)
-          IMov(Reg(RAX), RegOffset(2 * word_size, RBP));
-          ISub(Reg(RAX), Const(closure_tag));
-        ]
-        @
-        (* Get values out of closure and onto stack *)
-        (List.flatten (List.mapi (fun i name -> [
-          IMov(Reg(RDI), RegOffset(word_size * (i + 3), RAX));
-          IMov((find exec_env name), Reg(RDI));
-        ]) closed_vars))
-        @
-          [ILabel(sprintf "%s_body" label)]
-        @ (compile_aexpr body si exec_env (List.length binds) is_tail) @ [
-          IMov(Reg(RSP), Reg(RBP));
-          IPop(Reg(RBP));
-          IRet;
-        ] @ [
-          ILabel(after_label);
-          (* arity *)
-          IMov(Reg(RAX), Const(Int64.of_int arity));
-          IMov(RegOffset(0 * word_size, R15), Reg(RAX));
-          (* code ptr *)
-          IMov(Reg(RAX), Label(label));
-          IMov(RegOffset(1 * word_size, R15), Reg(RAX));
-          (* number of closed over vars *)
-          IMov(Reg(RAX), Const(Int64.of_int (List.length closed_vars)));
-          IMov(RegOffset(2 * word_size, R15), Reg(RAX));
-        ] @
-        (List.flatten (List.mapi (fun i name -> [
-          IMov(Reg(RAX), (find env name));
-          IMov(RegOffset(word_size * (i + 3), R15), Reg(RAX));
-        ]) closed_vars))
-        @ [
-        (* pad, put address in RAX, mask it *)
-          IMov(Reg(RAX), Reg(R15));
-          IAdd(Reg(RAX), Const(closure_tag));
-        (* increase the heap pointer and pad if needed *)
-          IAdd(Reg(R15), Const(Int64.of_int (word_size * (total_offset + (total_offset mod 2)))));
-          ILineComment("end of lambda");
-        ]
-    | CApp(lambda_id, args, call_type, _) ->
-        (match call_type with
-        | Native -> 
-            let rec push_args (args: arg list) (regs: reg list) : instruction list * instruction list =
-              match args with
-              | [] -> ([], [])
-              | arg::rest -> match regs with
-                              | [] -> let (rest_push, rest_pop) = (push_args rest regs) in
-                                      (IPush(arg)::rest_push, rest_pop @ [IPop(Reg(RDI))])
-                              | reg::regs -> let (rest_push, rest_pop) = (push_args rest regs) in
-                                      (IMov(Reg(reg), arg)::rest_push, rest_pop)
-            in
-            let (pushes, pops) = push_args (List.map (fun arg -> compile_imm arg env) args) first_six_args_registers in
-            let name = (match lambda_id with
-             | ImmId(name, _) -> name
-             | _ -> raise (InternalCompilerError "expected id")
-             ) in
-            pushes @ [ICall(Label(name))] @ pops
-        | Snake ->
-          let push_all = List.flatten (List.map (fun arg -> [IMov(Reg(R11), (compile_imm arg env)); IPush(Reg(R11))]) (List.rev args)) in
-          let pop_all = (List.map (fun _ -> IPop(Reg(RDI))) args) in
-          (*let _, place_all = List.fold_left_map (fun i arg -> 
-            (i + 1, [
-                      IMov(Reg(RAX), (compile_imm arg env));
-                      IMov(RegOffset(i * word_size, RBP), Reg(RAX))
-                    ])
-          ) 2 args in*)
-          [
-            IMov(Reg(RAX), (compile_imm lambda_id env));
-            IMov(Reg(R11), Reg(RAX));
-            IAnd(Reg(R11), HexConst(closure_tag_mask));
-            ICmp(Reg(R11), HexConst(closure_tag));
-            IJne(Label("call_not_closure"));
-          ] @
-          (if (is_tail && (List.length args) <= num_args) then
-          [ILineComment("tailcall methinks");] else [])(*@ List.flatten place_all @ [IJmp() ] else []) @*)
-          @ push_all @  
-          [
-            (* push pointer as argument *)
-            IPush(Reg(RAX));
-            ISub(Reg(RAX), Const(closure_tag));
-            IMov(Reg(R11), RegOffset(word_size * 0, RAX));
-            ICmp(Reg(R11), Const(Int64.of_int (List.length args)));
-            IJne(Label("call_arity"));
-            (* Untag and call code pointer, which is second word in lambda *)
-            ICall(RegOffset(word_size * 1, RAX));
-            IPop(Reg(RDI));
-          ] @ pop_all
+          IMov(Reg(scratch_reg), RegOffset((i + 3) * word_size, RBP));
+          IMov((find_var_envt exec_env arg), Reg(scratch_reg));
+        ]) binds) @
+    [
+      ILineComment(sprintf "get closed vars (%d)" (List.length closed_vars));
+    ] @
+    (* Get values out of closure and onto stack *)
+    (List.flatten (List.mapi (fun i name -> [
+      IMov(Reg(scratch_reg), RegOffset(word_size * (i + 3), RAX));
+      IMov((find_var_envt exec_env name), Reg(scratch_reg));
+    ]) closed_vars))
+    @ 
+    [
+      ILabel(sprintf "%s_body" label);
+    ] @ fnbody @ epilogue
+    @
+    [
+      ILabel(after_label);
+      (* arity *)
+      IMov(Reg(RAX), Const(Int64.of_int arity));
+      IMov(RegOffset(0 * word_size, R15), Reg(RAX));
+      (* code ptr *)
+      IMov(Reg(RAX), Label(label));
+      IMov(RegOffset(1 * word_size, R15), Reg(RAX));
+      (* number of closed over vars *)
+      IMov(Reg(RAX), Const(Int64.of_int (List.length closed_vars)));
+      IMov(RegOffset(2 * word_size, R15), Reg(RAX));
+    ] @
+    (List.flatten (List.mapi (fun i name -> [
+      IMov(Reg(RAX), (find_var_envt env name));
+      IMov(RegOffset(word_size * (i + 3), R15), Reg(RAX));
+    ]) closed_vars))
+    @ [
+    (* put address in RAX, mask it *)
+      IMov(Reg(RAX), Reg(R15));
+      IAdd(Reg(RAX), Const(closure_tag));
+    ] @
+    (* pad if needed *)
+    (if (total_offset mod 2) = 0 then [] else [
+      IMov(Reg(scratch_reg), Sized(QWORD_PTR, HexConst(0xEEEEL)));
+      IMov(RegOffset(word_size * ((List.length closed_vars) + 3), R15), Reg(scratch_reg));
+    ])
+    @
+    [
+    (* increase the heap pointer and pad if needed *)
+      IAdd(Reg(R15), Const(Int64.of_int (word_size * (total_offset + (total_offset mod 2)))));
+      ILineComment("end of lambda");
+    ]
+| CApp(lambda_id, args, call_type, _) ->
+    (match call_type with
+    | Native -> 
+        let rec push_args (args: arg list) (regs: reg list) : instruction list * instruction list =
+          match args with
+          | [] -> ([], [])
+          | arg::rest -> match regs with
+                          | [] -> let (rest_push, rest_pop) = (push_args rest regs) in
+                                  (IPush(arg)::rest_push, rest_pop @ [IPop(Reg(RDI))])
+                          | reg::regs -> let (rest_push, rest_pop) = (push_args rest regs) in
+                                  (IMov(Reg(reg), arg)::rest_push, rest_pop)
+        in
+        let (pushes, pops) = push_args (List.map (fun arg -> compile_imm arg env) args) first_six_args_registers in
+        let name = (match lambda_id with
+         | ImmId(name, _) -> name
+         | _ -> raise (InternalCompilerError "expected id")
+         ) in
+        pushes @ [ICall(Label(name))] @ pops
+    | Snake ->
+      let push_all = List.flatten (List.map (fun arg -> [IMov(Reg(R11), (compile_imm arg env)); IPush(Reg(R11))]) (List.rev args)) in
+      let pop_all = (List.map (fun _ -> IPop(Reg(RDI))) args) in
+      (*let _, place_all = List.fold_left_map (fun i arg -> 
+        (i + 1, [
+                  IMov(Reg(RAX), (compile_imm arg env));
+                  IMov(RegOffset(i * word_size, RBP), Reg(RAX))
+                ])
+      ) 2 args in*)
+      [
+        IMov(Reg(RAX), (compile_imm lambda_id env));
+        IMov(Reg(R11), Reg(RAX));
+        IAnd(Reg(R11), HexConst(closure_tag_mask));
+        ICmp(Reg(R11), HexConst(closure_tag));
+        IJne(Label("?err_call_not_closure"));
+      ] @
+      (if (is_tail && (List.length args) <= num_args) then
+      [ILineComment("tailcall methinks");] else [])(*@ List.flatten place_all @ [IJmp() ] else []) @*)
+      @ push_all @  
+      [
+        (* push pointer as argument *)
+        IPush(Reg(RAX));
+        ISub(Reg(RAX), Const(closure_tag));
+        IMov(Reg(R11), RegOffset(word_size * 0, RAX));
+        ICmp(Reg(R11), Const(Int64.of_int (List.length args)));
+        IJne(Label("?err_call_arity_err"));
+        (* Untag and call code pointer, which is second word in lambda *)
+        ICall(RegOffset(word_size * 1, RAX));
+        IPop(Reg(RDI));
+      ] @ pop_all
 
-        | _ -> raise (InternalCompilerError "invalid function type")
-        ) 
-*)
+    | _ -> raise (InternalCompilerError "invalid function type")
+    ) 
 
-    | _ -> raise (NotYetImplemented "have to fix the rest of compile_cexpr")
 
 and compile_imm e env =
   match e with
@@ -1320,57 +1375,6 @@ and compile_imm e env =
   | ImmBool(false, _) -> const_false
   | ImmId(x, _) -> (find_var_envt env x)
   | ImmNil(_) -> HexConst(0x01L)
-;;
-
-let rec replicate x i =
-  if i = 0 then []
-  else x :: (replicate x (i - 1))
-
-and reserve size tag =
-  let ok = sprintf "$memcheck_%d" tag in
-  [
-    IInstrComment(IMov(Reg(RAX), LabelContents("?HEAP_END")),
-                 sprintf "Reserving %d words" (size / word_size));
-    ISub(Reg(RAX), Const(Int64.of_int size));
-    ICmp(Reg(RAX), Reg(heap_reg));
-    IJge(Label ok);
-  ]
-  @ (native_call (Label "?try_gc") [
-         (Sized(QWORD_PTR, Reg(heap_reg))); (* alloc_ptr in C *)
-         (Sized(QWORD_PTR, Const(Int64.of_int size))); (* bytes_needed in C *)
-         (Sized(QWORD_PTR, Reg(RBP))); (* first_frame in C *)
-         (Sized(QWORD_PTR, Reg(RSP))); (* stack_top in C *)
-    ])
-  @ [
-      IInstrComment(IMov(Reg(heap_reg), Reg(RAX)), "assume gc success if returning here, so RAX holds the new heap_reg value");
-      ILabel(ok);
-    ]
-
-(* IMPLEMENT THIS FROM YOUR PREVIOUS ASSIGNMENT *)
-(* Additionally, you are provided an initial environment of values that you may want to
-   assume should take up the first few stack slots.  See the compiliation of Programs
-   below for one way to use this ability... *)
- and compile_fun name args body (initial_env: arg name_envt name_envt) = (
-   let env = find initial_env name in
-   let stack_size = List.length env in
-   [
-   ILineComment("prologue");
-   IPush(Reg(RBP));
-   IMov(Reg(RBP), Reg(RSP));
-   IAdd(Reg(RSP), Const(Int64.of_int (~-word_size * (stack_size + (stack_size mod 2)))));
-   ILineComment(sprintf "num vars: %d" (List.length env));
-   ],
-   [ (* TODO: compile body*)
-     ILineComment("body")
-
-   ] @ (compile_aexpr body 0 initial_env (List.length args) false),
-   [
-   ILineComment("pop arguments and return?");
-   IMov(Reg(RSP), Reg(RBP));
-   IPop(Reg(RBP));
-   IRet;
-   ])
-
 
 and args_help args regs =
   match args, regs with

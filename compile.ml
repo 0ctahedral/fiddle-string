@@ -1075,12 +1075,11 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
             (* put compare in r11 *)
             IMov(Reg(R11), comp_e2);
 
-            (* don't have to convert to machine val i think
-            ISar(Reg(R11), Const(1L));*)
+            ISar(Reg(R11), Const(1L));
           
             (* check if too high *)
-            ICmp(Reg(R11), RegOffset(0 * word_size, RAX));
-            IJge(Label("?err_get_high_index"));
+            ICmp(Reg(R11), RegOffset(-1, RAX));
+            IJg(Label("?err_get_high_index"));
           ]
       )
 
@@ -1150,6 +1149,7 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
           
           (* put index into r11 and divide by 2 to get machine number *)
           IMov(Reg(R11), imm_idx);
+          (* TODO: this is causing a segfault because error expects a snakeval *)
           ISar(Reg(R11), Const(1L));
           ICmp(Reg(R11), Const(0L));
           IJl(Label("?err_get_low_index"));

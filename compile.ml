@@ -975,9 +975,7 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
               IMov(Reg(RAX), const_false);
               IOr(Reg(RAX), Reg(R11));
         ]
-
-        | Print -> raise (InternalCompilerError "Should never get here")
-        | PrintStack -> raise (InternalCompilerError "Print Stack not yet implemented")
+        | PrintStack -> raise (NotYetImplemented "Print Stack not yet implemented")
     )
 
     | CPrim2(prim2, e1, e2, tag) -> 

@@ -1102,12 +1102,14 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
           ILabel(thn_label); ] @
         (compile_aexpr thn si env num_args is_tail) @
         [ ILabel(done_label); ])
-    | CTuple(exps, _) -> 
+    | CTuple(exps, tag) -> 
             let total_offset, set_tuple = List.fold_left_map
             (fun offset e -> (offset + 1, [IMov(Reg(RAX), (compile_imm e env)); IMov(RegOffset(offset * word_size, R15), Reg(RAX))]))
             1 exps in
             [
               ILineComment("tuple starts here");
+            ] @ (reserve total_offset tag) @
+            [
               (* put length of tuple in heap*)
               IMov(Reg(RAX), Const(Int64.of_int (total_offset - 1)));
               IMov(RegOffset(0 * word_size, R15), Reg(RAX))
@@ -1320,13 +1322,14 @@ and compile_imm e env =
   | ImmBool(false, _) -> const_false
   | ImmId(x, _) -> (find_var_envt env x)
   | ImmNil(_) -> HexConst(0x01L)
-;;
 
-let rec replicate x i =
+and replicate x i =
   if i = 0 then []
   else x :: (replicate x (i - 1))
 
 and reserve size tag =
+  (* For testing, perform gc on each allocation *)
+  (*
   let ok = sprintf "$memcheck_%d" tag in
   [
     IInstrComment(IMov(Reg(RAX), LabelContents("?HEAP_END")),
@@ -1335,7 +1338,7 @@ and reserve size tag =
     ICmp(Reg(RAX), Reg(heap_reg));
     IJge(Label ok);
   ]
-  @ (native_call (Label "?try_gc") [
+  @*) (native_call (Label "?try_gc") [
          (Sized(QWORD_PTR, Reg(heap_reg))); (* alloc_ptr in C *)
          (Sized(QWORD_PTR, Const(Int64.of_int size))); (* bytes_needed in C *)
          (Sized(QWORD_PTR, Reg(RBP))); (* first_frame in C *)
@@ -1343,7 +1346,7 @@ and reserve size tag =
     ])
   @ [
       IInstrComment(IMov(Reg(heap_reg), Reg(RAX)), "assume gc success if returning here, so RAX holds the new heap_reg value");
-      ILabel(ok);
+      (*ILabel(ok);*)
     ]
 
 (* IMPLEMENT THIS FROM YOUR PREVIOUS ASSIGNMENT *)

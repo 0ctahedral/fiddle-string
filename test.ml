@@ -14,7 +14,7 @@ let tvg name program input expected = name>::test_run_valgrind ~args:[] ~std_inp
 let tvgc name heap_size program input expected = name>::test_run_valgrind ~args:[string_of_int heap_size] ~std_input:input program name expected;;
 let terr name program input expected = name>::test_err ~args:[] ~std_input:input program name expected;;
 let tgcerr name heap_size program input expected = name>::test_err ~args:[string_of_int heap_size] ~std_input:input program name expected;;
-let tanf name program input expected = name>::fun _ ->
+let tanf name program _input expected = name>::fun _ ->
   assert_equal expected (anf (tag program)) ~printer:string_of_aprogram;;
 
 let tparse name program expected = name>::fun _ ->
@@ -46,6 +46,7 @@ let program_tests = [
   t "simple" "let x = 5 in x" "" "5";
   t "number5" "5" "" "5";
   t "tuple" "let t = (0, 5) in t" "" "(0, 5)";
+  t "tuple_simple" "let a = (1, 2) in let b = (3, 4) in (5, 6)" "" "(5, 6)";
   t "thruple" "let t = (0, 3, 5) in t" "" "(0, 3, 5)";
   t "thruple_get" "let t = (0, 3, 5) in t[0]" "" "0";
   terr "too_high" "let t = (0, 3, 5) in t[7]" "" "index too large to get, got 7";

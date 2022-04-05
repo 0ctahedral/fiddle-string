@@ -760,28 +760,18 @@ let:
              fact(3)
 
 
-    (("?our_code_starts_here"
-           (("equal_4" (var_loc 0))
-            ("print_14" (var_loc 1))
-            ("print_22" (var_loc 2))
-            ("fact_28" (var_loc 3))))
-
-      ("fact_28" (("n_42" (arg 0))
+    (("fact_28" (("n_42" (arg 0))
                   ("binop_31" (var_loc 0))
                   ("binop_38" (var_loc 1))
                   ("app_37"   (var_loc 2))))
-      ("input_22"
-           ("*input" [label]))
-      ("print_14"
-        (("a_19" arg_loc)
-          ("*print" [label])))
-      ("equal_4"
-        (("a_10" arg_loc)
-          ("b_11" arg_loc)
-          ("*equal" [label]))))
+      ("?our_code_starts_here"
+           (("equal_4" (var_loc 0))
+            ("print_14" (var_loc 1))
+            ("print_22" (var_loc 2))
+            ("fact_28" (var_loc 3)))))
 
-    going up one on the list is your parent scope
-    search goes up in the list, recursively checking the parent scope
+    going down one on the list is your parent scope
+    search goes down in the list, recursively checking the parent scope
    *)
   (* TODO: are the stack numbers correct? *)
   let rec helpA (expr : tag aexpr) (env: arg name_envt name_envt) (si : int) : arg name_envt name_envt =
@@ -824,7 +814,6 @@ let:
              this new environment *)
           let env_name = get_last_var env in
           let new_si, args_env = List.fold_left (fun (new_si, args_env) name ->
-            (*(name, RegOffset((i + 3) * word_size, RBP))) args in*)
             (* NEW STRAT: put all variables on the stack and it is the job of the setup to get them out *)
             (new_si + 1, (name, RegOffset(~-new_si * word_size, RBP))::args_env)) (1, []) args in
           let fv = (free_vars (ACExpr cexpr)) in
@@ -852,20 +841,31 @@ let:
                             (prog, body_envt)
 ;;
 
-let rec find_var_envt (env : arg name_envt name_envt) (name : string) = 
-  match env with
-  | [] -> raise (InternalCompilerError "")
-  | (_, cenv)::rest ->
-      match find_var cenv name with
-      | Some(loc) -> loc
-      | None -> find_var_envt rest name
-and find_var (l : arg name_envt) (name : string) : 'a option =
+let rec find_var (l : arg name_envt) (name : string) : 'a option =
   match l with
     | [] -> None
     | (x, loc)::rest ->
       if x == name then Some(loc) else find_var rest name
+and find_env (env : arg name_envt name_envt) (name : string) : arg name_envt =
+  match env with
+  | [] -> raise (InternalCompilerError (sprintf "env %s not found" name))
+  | (n, cenv)::rest ->
+        if n = name then cenv else find_env rest name
 ;;
 
+(* looks in a given envt first, then *)
+let find_var_in_envt (env : arg name_envt name_envt) (var : string) (env_name : string)= 
+  let rec find_var_envt (env : arg name_envt name_envt) (name : string) = 
+    match env with
+    | [] -> raise (InternalCompilerError (sprintf "var %s not found" name))
+    | (_, cenv)::rest ->
+        match find_var cenv name with
+        | Some(loc) -> loc
+        | None -> find_var_envt rest name in
+  let targ_env = find_env env env_name in
+  match find_var targ_env var with
+  | None -> find_var_envt env var
+  | Some(loc) -> loc
 ;;
 
 let check_num (a: arg) (l: string) = [
@@ -925,7 +925,7 @@ and reserve size tag =
    assume should take up the first few stack slots.  See the compiliation of Programs
    below for one way to use this ability... *)
  and compile_fun name args body (initial_env: arg name_envt name_envt) = (
-   let env = find initial_env name in
+   let env = find_env initial_env name in
    let stack_size = List.length env in
    let arity = (List.length args) in
    [
@@ -934,24 +934,30 @@ and reserve size tag =
    IMov(Reg(RBP), Reg(RSP));
    IAdd(Reg(RSP), Const(Int64.of_int (~-word_size * (stack_size + (stack_size mod 2)))));
    ],
-   [ ILineComment("body") ] @ (compile_aexpr body 0 initial_env arity false),
+   [ ILineComment("body") ] @ (compile_aexpr body 0 initial_env arity false name),
    [
    ILineComment("pop arguments and return?");
    IMov(Reg(RSP), Reg(RBP));
    IPop(Reg(RBP));
    IRet;
    ])
-and compile_aexpr (e : tag aexpr) (si : int) (env : arg name_envt name_envt) (num_args : int) (is_tail : bool) : instruction list =
+and compile_aexpr (e : tag aexpr) (si : int) (env : arg name_envt name_envt) (num_args : int) (is_tail : bool) (name : string) : instruction list =
   match e with
-    | ALet(name, bind, body, _tag) -> let comp_bind = (compile_cexpr bind si env num_args false name) in
-                                     let comp_body = (compile_aexpr body si env num_args is_tail) in
-                                     [ILineComment("let starts here");] @ comp_bind @ [IMov((find_var_envt env name), Reg(RAX))] @ comp_body
+    | ALet(bname, bind, body, _tag) -> let comp_bind =
+      match bind with
+      | CLambda(_, _, _) -> (compile_cexpr bind si env num_args false bname)
+      | _ -> (compile_cexpr bind si env num_args false name)
+   in
+                                     let comp_body = (compile_aexpr body si env num_args is_tail name) in
+                                     [ILineComment("let starts here");] @ comp_bind @
+                                     [IMov((find_var_in_envt env bname name), Reg(RAX))] @ comp_body
+
           
-    | ACExpr(cexpr) -> (compile_cexpr cexpr si env num_args is_tail "")
-    | ASeq(bind, body, _) -> let comp_bind = (compile_cexpr bind si env num_args false "") in
-                                     let comp_body = (compile_aexpr body si env num_args is_tail) in
+    | ACExpr(cexpr) -> (compile_cexpr cexpr si env num_args is_tail name)
+    | ASeq(bind, body, _) -> let comp_bind = (compile_cexpr bind si env num_args false name) in
+                                     let comp_body = (compile_aexpr body si env num_args is_tail name) in
                                      comp_bind @ comp_body
-    | ALetRec([(name, lambda)], body, _) -> raise (NotYetImplemented "comp aletrec")
+    | ALetRec([(bname, lambda)], body, _) -> raise (NotYetImplemented "comp aletrec")
 
         (*let store_closure_ptr = [
                                             IMov(Reg(RAX), Reg(R15));
@@ -964,8 +970,8 @@ and compile_aexpr (e : tag aexpr) (si : int) (env : arg name_envt name_envt) (nu
     | ALetRec(_, _, _) -> raise (InternalCompilerError "Mutually recursive functions not implemented")
 and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (num_args : int) (is_tail : bool) (name: string): instruction list =
   match e with
-    | CImmExpr(imm) -> [IMov(Reg(RAX), compile_imm imm env)]
-    | CPrim1(prim1, imm, tag) -> (let imm_arg = (compile_imm imm env) in
+    | CImmExpr(imm) -> [IMov(Reg(RAX), compile_imm imm env name)]
+    | CPrim1(prim1, imm, tag) -> (let imm_arg = (compile_imm imm env name) in
       match prim1 with
         | Add1 -> (check_arith imm_arg) @ [
             IMov(Reg(RAX), imm_arg);
@@ -1023,8 +1029,8 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
     )
 
     | CPrim2(prim2, e1, e2, tag) -> 
-        (let comp_e1 = (compile_imm e1 env) in
-        let comp_e2 = (compile_imm e2 env) in
+        (let comp_e1 = (compile_imm e1 env name) in
+        let comp_e2 = (compile_imm e2 env name) in
         let is_true_label = sprintf "is_true_%d" tag in
         let done_label = sprintf "done_%d" tag in
           match prim2 with
@@ -1129,7 +1135,7 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
         (let thn_label = sprintf "if_thn_%d" tag in
         let els_label = sprintf "if_els_%d" tag in
         let done_label = sprintf "if_done_%d" tag in
-        let cond_imm = (compile_imm cond env) in
+        let cond_imm = (compile_imm cond env name) in
         [
           IMov(Reg(RAX), cond_imm);
           (* check if boolean *)
@@ -1141,14 +1147,14 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
         ] @
         (*els label and condition, jump to done*)
         [ ILabel(els_label); ] @
-        (compile_aexpr els si env num_args is_tail) @
+        (compile_aexpr els si env num_args is_tail name) @
         [ IJmp(Label(done_label));
           ILabel(thn_label); ] @
-        (compile_aexpr thn si env num_args is_tail) @
+        (compile_aexpr thn si env num_args is_tail name) @
         [ ILabel(done_label); ])
     | CTuple(exps, _) -> 
             let total_offset, set_tuple = List.fold_left_map
-            (fun offset e -> (offset + 1, [IMov(Reg(RAX), (compile_imm e env)); IMov(RegOffset(offset * word_size, R15), Reg(RAX))]))
+            (fun offset e -> (offset + 1, [IMov(Reg(RAX), (compile_imm e env name)); IMov(RegOffset(offset * word_size, R15), Reg(RAX))]))
             1 exps in
             [
               ILineComment("tuple starts here");
@@ -1165,10 +1171,10 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
               ILineComment("tuple ends here");
             ]
     | CGetItem(e, idx, tag) -> 
-        let e_istuple = (compile_cexpr (CPrim1(IsTuple, e, tag)) si env num_args is_tail "") in
-        let idx_isnum = (compile_cexpr (CPrim1(IsNum, idx, tag)) si env num_args is_tail "") in
-        let imm_e = compile_imm e env in
-        let imm_idx = compile_imm idx env in
+        let e_istuple = (compile_cexpr (CPrim1(IsTuple, e, tag)) si env num_args is_tail name) in
+        let idx_isnum = (compile_cexpr (CPrim1(IsNum, idx, tag)) si env num_args is_tail name) in
+        let imm_e = compile_imm e env name in
+        let imm_idx = compile_imm idx env name in
         e_istuple @
         [
           IMov(Reg(RDI), const_true);
@@ -1204,11 +1210,11 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
           IMov(Reg(RAX), RegOffsetReg(RAX, R11, word_size, 0));
         ]
     | CSetItem(e, idx, newval, tag) ->
-        let e_istuple = (compile_cexpr (CPrim1(IsTuple, e, tag)) si env num_args is_tail "") in
-        let idx_isnum = (compile_cexpr (CPrim1(IsNum, idx, tag)) si env num_args is_tail "") in
-        let imm_e = compile_imm e env in
-        let imm_idx = compile_imm idx env in
-        let imm_newval = compile_imm newval env in
+        let e_istuple = (compile_cexpr (CPrim1(IsTuple, e, tag)) si env num_args is_tail name) in
+        let idx_isnum = (compile_cexpr (CPrim1(IsNum, idx, tag)) si env num_args is_tail name) in
+        let imm_e = compile_imm e env name in
+        let imm_idx = compile_imm idx env name in
+        let imm_newval = compile_imm newval env name in
         e_istuple @
         [
           IMov(Reg(RDI), const_true);
@@ -1245,14 +1251,14 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
 
     | CLambda(binds, body, tag) ->
 
-    let label = sprintf "closure_%d" tag in
-    let after_label = sprintf "after_%d" tag in
+    let label = sprintf "%s_closure_%d" name tag in
+    let after_label = sprintf "%s_after_%d" name tag in
     let arity = List.length binds in
-    let exec_env = [(name, find env name)]  in
+    let exec_env = [(name, find_env env name)]  in
     let closed_vars = free_vars (ACExpr(e)) in
     (* 3 words for arity, code ptr, and # of vars closed over, plus a word for each var *)
     let total_offset = 3 + (List.length closed_vars) in
-    let (prologue, fnbody, epilogue) = compile_fun name binds body exec_env in
+    let (prologue, fnbody, epilogue) = compile_fun name binds body env in
     [
       ILineComment("begin lambda");
       IJmp(Label(after_label));
@@ -1268,15 +1274,15 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
     ] @ List.flatten (List.mapi (fun i arg ->
         [
           IMov(Reg(scratch_reg), RegOffset((i + 3) * word_size, RBP));
-          IMov((find_var_envt exec_env arg), Reg(scratch_reg));
+          IMov((find_var_in_envt exec_env arg name), Reg(scratch_reg));
         ]) binds) @
     [
       ILineComment(sprintf "get closed vars (%d)" (List.length closed_vars));
     ] @
     (* Get values out of closure and onto stack *)
-    (List.flatten (List.mapi (fun i name -> [
+    (List.flatten (List.mapi (fun i var -> [
       IMov(Reg(scratch_reg), RegOffset(word_size * (i + 3), RAX));
-      IMov((find_var_envt exec_env name), Reg(scratch_reg));
+      IMov((find_var_in_envt exec_env var name), Reg(scratch_reg));
     ]) closed_vars))
     @ 
     [
@@ -1295,8 +1301,8 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
       IMov(Reg(RAX), Const(Int64.of_int (List.length closed_vars)));
       IMov(RegOffset(2 * word_size, R15), Reg(RAX));
     ] @
-    (List.flatten (List.mapi (fun i name -> [
-      IMov(Reg(RAX), (find_var_envt env name));
+    (List.flatten (List.mapi (fun i var -> [
+      IMov(Reg(RAX), (find_var_in_envt env var name));
       IMov(RegOffset(word_size * (i + 3), R15), Reg(RAX));
     ]) closed_vars))
     @ [
@@ -1327,14 +1333,14 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
                           | reg::regs -> let (rest_push, rest_pop) = (push_args rest regs) in
                                   (IMov(Reg(reg), arg)::rest_push, rest_pop)
         in
-        let (pushes, pops) = push_args (List.map (fun arg -> compile_imm arg env) args) first_six_args_registers in
+        let (pushes, pops) = push_args (List.map (fun arg -> compile_imm arg env name) args) first_six_args_registers in
         let name = (match lambda_id with
          | ImmId(name, _) -> name
          | _ -> raise (InternalCompilerError "expected id")
          ) in
         pushes @ [ICall(Label(name))] @ pops
     | Snake ->
-      let push_all = List.flatten (List.map (fun arg -> [IMov(Reg(R11), (compile_imm arg env)); IPush(Reg(R11))]) (List.rev args)) in
+      let push_all = List.flatten (List.map (fun arg -> [IMov(Reg(R11), (compile_imm arg env name)); IPush(Reg(R11))]) (List.rev args)) in
       let pop_all = (List.map (fun _ -> IPop(Reg(RDI))) args) in
       (*let _, place_all = List.fold_left_map (fun i arg -> 
         (i + 1, [
@@ -1343,7 +1349,7 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
                 ])
       ) 2 args in*)
       [
-        IMov(Reg(RAX), (compile_imm lambda_id env));
+        IMov(Reg(RAX), (compile_imm lambda_id env name));
         IMov(Reg(R11), Reg(RAX));
         IAnd(Reg(R11), HexConst(closure_tag_mask));
         ICmp(Reg(R11), HexConst(closure_tag));
@@ -1368,12 +1374,12 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
     ) 
 
 
-and compile_imm e env =
+and compile_imm e env ename =
   match e with
   | ImmNum(n, _) -> Const(Int64.shift_left n 1)
   | ImmBool(true, _) -> const_true
   | ImmBool(false, _) -> const_false
-  | ImmId(x, _) -> (find_var_envt env x)
+  | ImmId(x, _) -> (find_var_in_envt env x ename)
   | ImmNil(_) -> HexConst(0x01L)
 
 and args_help args regs =

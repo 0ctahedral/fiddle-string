@@ -12,7 +12,7 @@
     heap_end: the first address after the heap
  */
 uint64_t *naive_print_heap(uint64_t *heap,
-                           uint64_t *heap_end) asm("?naive_print_heap");
+                           uint64_t *heap_end) asm("naive_print_heap");
 
 // IMPLEMENT THE FUNCTIONS BELOW
 

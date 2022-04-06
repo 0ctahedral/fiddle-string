@@ -356,10 +356,8 @@ uint64_t *try_gc(uint64_t *alloc_ptr, uint64_t bytes_needed,
 
   new_r15 =
       gc(STACK_BOTTOM, cur_frame, cur_stack_top, FROM_S, HEAP_END, new_r15);
-  printf("Returned from gc call\n");
   HEAP = new_heap;
   HEAP_END = new_heap_end;
-  printf("Freeing old heap \n");
   free(old_heap);
 
   // Note: strict greater-than is correct here: if new_r15 + (bytes_needed / 8)

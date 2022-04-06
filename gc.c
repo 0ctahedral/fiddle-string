@@ -53,31 +53,38 @@ void smarter_print_heap(uint64_t *from_start, uint64_t *from_end,
   location with a forwarding pointer to its new location
  */
 uint64_t *copy_if_needed(uint64_t *garter_val_addr, uint64_t *heap_top) {
+  // printf("Heap top called with %p\n", heap_top);
   uint64_t garter_val = *garter_val_addr;
-  printf("Copy if needed: ");
-  printHelp(stdout, garter_val);
-  printf("\n");
+  // printf("Copy if needed: ");
+  // printHelp(stdout, garter_val);
+  // printf("\n");
   uint64_t *heap_thing;
   uint64_t len;
   if ((garter_val & TUPLE_TAG_MASK) == TUPLE_TAG && garter_val != NIL) {
-    printf("Found tuple, copying: ");
-    printHelp(stdout, garter_val);
-    printf("\n");
-    // untag to get addr to heap thing
+    // printf("Found tuple, copying: \n");
+    // printHelp(stdout, garter_val);
+    // printf("\n");
+    //  untag to get addr to heap thing
     heap_thing = (uint64_t *)(garter_val - TUPLE_TAG);
-    // read length of tuple
-    len = *heap_thing;
-    // copy heap thing to to-space
+    // read length of tuple, including length word itself
+    len = *heap_thing + 1;
+    // printf("Length is %ld\n", len);
+    //  copy heap thing to to-space
     for (int i = 0; i < len; i++) {
       heap_top[i] = heap_thing[i];
     }
     // replace old heap thing in from-space with forwarding pointer to to-space
+    // printf("Replacing old tuple with forwarding pointer\n");
     *heap_thing = (uint64_t)heap_top | FWD_PTR_TAG;
+    // change original pointer to heap thing to point to new to-space location
+    *garter_val_addr = (uint64_t)heap_top + TUPLE_TAG;
     // move heap_top pointer, pad if len is even (len plus tuple elements will
     // be odd)
-    heap_top += len + (len % 2);
+    // printf("Adding %ld to heap top\n", (len + (len % 2)) * sizeof(uint64_t));
+    heap_top += (len + (len % 2)) * sizeof(uint64_t);
   }
   // TODO: case for closure
+  // printf("Returning heap_top\n");
   return heap_top;
 }
 
@@ -96,7 +103,6 @@ uint64_t *copy_if_needed(uint64_t *garter_val_addr, uint64_t *heap_top) {
  */
 uint64_t *gc(uint64_t *bottom_frame, uint64_t *top_frame, uint64_t *top_stack,
              uint64_t *from_start, uint64_t *from_end, uint64_t *to_start) {
-  printf("Running gc\n");
 
   uint64_t *old_top_frame = top_frame;
   do {

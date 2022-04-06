@@ -38,13 +38,16 @@ let err_OVERFLOW         = 5L
 let err_GET_NOT_TUPLE    = 6L
 let err_GET_LOW_INDEX    = 7L
 let err_GET_HIGH_INDEX   = 8L
-let err_NIL_DEREF        = 9L
-let err_OUT_OF_MEMORY    = 10L
-let err_SET_NOT_TUPLE    = 11L
-let err_SET_LOW_INDEX    = 12L
-let err_SET_HIGH_INDEX   = 13L
-let err_CALL_NOT_CLOSURE = 14L
-let err_CALL_ARITY_ERR   = 15L
+let err_GET_NOT_NUM      = 9L
+let err_NIL_DEREF        = 10L
+let err_OUT_OF_MEMORY    = 11L
+let err_SET_NOT_TUPLE    = 12L
+let err_SET_LOW_INDEX    = 13L
+let err_SET_NOT_NUM      = 14L
+let err_SET_HIGH_INDEX   = 15L
+let err_CALL_NOT_CLOSURE = 16L
+let err_CALL_ARITY_ERR   = 17L
+
 
 let dummy_span = (Lexing.dummy_pos, Lexing.dummy_pos);;
 
@@ -1193,11 +1196,10 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
         ]
         @ idx_isnum @
         [
-          (* TODO: not num isn't defined
           IMov(Reg(RDI), const_true);
           ICmp(Reg(RAX), Reg(RDI));
           IMov(Reg(RAX), imm_idx);
-          IJne(Label("err_get_not_num"));*)
+          IJne(Label("err_get_not_num"));
 
           IMov(Reg(RAX), imm_e);
           ISub(Reg(RAX), Const(1L));
@@ -1206,9 +1208,8 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
           
           (* put index into r11 and divide by 2 to get machine number *)
           IMov(Reg(R11), imm_idx);
-          (* TODO: this is causing a segfault because error expects a snakeval *)
-          ISar(Reg(R11), Const(1L));
           ICmp(Reg(R11), Const(0L));
+          ISar(Reg(R11), Const(1L));
           IJl(Label("err_get_low_index"));
 
           ICmp(Reg(R11), RegOffset(0 * word_size, RAX));
@@ -1479,6 +1480,8 @@ err_set_low_index:%s
 err_set_high_index:%s
 err_call_not_closure:%s
 err_call_arity_err:%s
+err_get_not_num:%s
+err_set_not_num:%s
 "
                        (to_asm (native_call (Label "error") [Const(err_COMP_NOT_NUM); Reg(scratch_reg)]))
                        (to_asm (native_call (Label "error") [Const(err_ARITH_NOT_NUM); Reg(scratch_reg)]))
@@ -1495,6 +1498,8 @@ err_call_arity_err:%s
                        (to_asm (native_call (Label "error") [Const(err_SET_HIGH_INDEX); Reg(scratch_reg)]))
                        (to_asm (native_call (Label "error") [Const(err_CALL_NOT_CLOSURE); Reg(scratch_reg)]))
                        (to_asm (native_call (Label "error") [Const(err_CALL_ARITY_ERR); Reg(scratch_reg)]))
+                       (to_asm (native_call (Label "error") [Const(err_GET_NOT_NUM); Reg(scratch_reg)]))
+                       (to_asm (native_call (Label "error") [Const(err_SET_NOT_NUM); Reg(scratch_reg)]))
   in
   match anfed with
   | AProgram(body, _) ->

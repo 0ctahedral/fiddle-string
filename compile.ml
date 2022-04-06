@@ -891,23 +891,23 @@ let check_num (a: arg) (l: string) = [
 let check_arith (a: arg) = [
     IMov(Reg(RDI), a);
     ITest(Reg(RDI), HexConst(num_tag_mask));
-    IJnz(Label("err_arith_not_num"));
+    IJnz(Label("?err_arith_not_num"));
     ];;
 
 let check_comp (a: arg) = [
       IMov(Reg(RDI), a);
       ITest(Reg(RDI), HexConst(num_tag_mask));
-      IJnz(Label("err_comp_not_num"));
+      IJnz(Label("?err_comp_not_num"));
 ];;
 
 let check_logic (a: arg) = [
       IMov(Reg(RDI), a);
       ITest(Reg(RDI), HexConst(num_tag_mask));
-      IJz(Label("err_logic_not_bool"));
+      IJz(Label("?err_logic_not_bool"));
 ];;
 
 let check_overflow = [
-      IJo(Label("err_overflow"));
+      IJo(Label("?err_overflow"));
 ];;
 
 let rec replicate x i =
@@ -925,7 +925,7 @@ and reserve size tag =
     ICmp(Reg(RAX), Reg(heap_reg));
     IJge(Label ok);
   ]
-  @*) (native_call (Label "try_gc") [
+  @*) (native_call (Label "?try_gc") [
          (Sized(QWORD_PTR, Reg(heap_reg))); (* alloc_ptr in C *)
          (Sized(QWORD_PTR, Const(Int64.of_int size))); (* bytes_needed in C *)
          (Sized(QWORD_PTR, Reg(RBP))); (* first_frame in C *)
@@ -994,7 +994,7 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
         | Sub1 -> (check_arith imm_arg) @ [
             IMov(Reg(RAX), imm_arg);
             ISub(Reg(RAX), Const(2L));
-            IJo(Label("err_overflow"));
+            IJo(Label("?err_overflow"));
         ]
         | Not -> let is_true_label = sprintf "is_true_%d" tag in
                   let done_label = sprintf "done_%d" tag in
@@ -1062,7 +1062,7 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
             IMov(Reg(RAX), comp_e1);
             IMov(Reg(RDI), comp_e2);
             IMul(Reg(RAX), Reg(RDI));
-            IJo(Label("err_overflow"));
+            IJo(Label("?err_overflow"));
             ISar(Reg(RAX), Const(1L));
           ]
           | And -> check_logic(comp_e1) @ check_logic(comp_e2) @ [
@@ -1141,7 +1141,7 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
           
             (* check if too high *)
             ICmp(Reg(R11), RegOffset(-1, RAX));
-            IJg(Label("err_get_high_index"));
+            IJg(Label("?err_get_high_index"));
           ]
       )
 
@@ -1154,7 +1154,7 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
           IMov(Reg(RAX), cond_imm);
           (* check if boolean *)
           ITest(Reg(RAX), HexConst(num_tag_mask));
-          IJz(Label("err_if_not_bool"));
+          IJz(Label("?err_if_not_bool"));
           (* compare to true *)
           ICmp(Reg(RAX), const_true);
           IJe(Label(thn_label));
@@ -1196,7 +1196,7 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
           IMov(Reg(RDI), const_true);
           ICmp(Reg(RAX), Reg(RDI));
           IMov(Reg(RAX), imm_e);
-          IJne(Label("err_get_not_tuple"));
+          IJne(Label("?err_get_not_tuple"));
         ]
         @ idx_isnum @
         [
@@ -1208,7 +1208,7 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
           IMov(Reg(RAX), imm_e);
           ISub(Reg(RAX), Const(1L));
           ICmp(Reg(RAX), Const(0L));
-          IJle(Label("err_nil_deref"));
+          IJle(Label("?err_nil_deref"));
           
           (* put index into r11 and divide by 2 to get machine number *)
           IMov(Reg(R11), imm_idx);
@@ -1217,7 +1217,7 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
           IJl(Label("?err_get_low_index"));
 
           ICmp(Reg(R11), RegOffset(0 * word_size, RAX));
-          IJge(Label("err_get_high_index"));
+          IJge(Label("?err_get_high_index"));
 
           IAdd(Reg(R11), Const(1L));
           (* get value*)
@@ -1234,27 +1234,27 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
           IMov(Reg(RDI), const_true);
           ICmp(Reg(RAX), Reg(RDI));
           IMov(Reg(RAX), imm_e);
-          IJne(Label("err_set_not_tuple"));
+          IJne(Label("?err_set_not_tuple"));
         ]
         @ idx_isnum @
         [
-          (*IMov(Reg(RDI), const_true);
+          IMov(Reg(RDI), const_true);
           ICmp(Reg(RAX), Reg(RDI));
           IMov(Reg(RAX), imm_idx);
-          IJne(Label("err_set_not_num"));*)
+          IJne(Label("?err_set_not_num"));
         
           (* deref *)
           IMov(Reg(RAX), imm_e);
           ISub(Reg(RAX), Const(1L));
           ICmp(Reg(RAX), Const(0L));
-          IJle(Label("err_nil_deref"));
+          IJle(Label("?err_nil_deref"));
           (* put index into r11 and divide by 2 to get machine number *)
           IMov(Reg(R11), imm_idx);
           ISar(Reg(R11), Const(1L));
           ICmp(Reg(R11), Const(0L));
-          IJl(Label("err_set_low_index"));
+          IJl(Label("?err_set_low_index"));
           ICmp(Reg(R11), RegOffset(0 * word_size, RAX));
-          IJge(Label("err_set_high_index"));
+          IJge(Label("?err_set_high_index"));
 
           IAdd(Reg(R11), Const(1L));
 
@@ -1367,7 +1367,7 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
         IMov(Reg(R11), Reg(RAX));
         IAnd(Reg(R11), HexConst(closure_tag_mask));
         ICmp(Reg(R11), HexConst(closure_tag));
-        IJne(Label("err_call_not_closure"));
+        IJne(Label("?err_call_not_closure"));
       ] @
       (if (is_tail && (List.length args) <= num_args) then
       [ILineComment("tailcall methinks");] else [])(*@ List.flatten place_all @ [IJmp() ] else []) @*)
@@ -1378,7 +1378,7 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
         ISub(Reg(RAX), Const(closure_tag));
         IMov(Reg(R11), RegOffset(word_size * 0, RAX));
         ICmp(Reg(R11), Const(Int64.of_int (List.length args)));
-        IJne(Label("err_call_arity_err"));
+        IJne(Label("?err_call_arity_err"));
         (* Untag and call code pointer, which is second word in lambda *)
         ICall(RegOffset(word_size * 1, RAX));
         IPop(Reg(RDI));
@@ -1457,17 +1457,17 @@ let add_native_lambdas (p : sourcespan program) =
 let compile_prog (anfed, (env : arg name_envt name_envt)) =
   let prelude =
     "section .text
-extern error
-extern input
-extern print
-extern print_stack
-extern equal
-extern try_gc
-extern naive_print_heap
-extern HEAP
-extern HEAP_END
-extern set_stack_bottom
-global our_code_starts_here" in
+extern ?error
+extern ?input
+extern ?print
+extern ?print_stack
+extern ?equal
+extern ?try_gc
+extern ?naive_print_heap
+extern ?HEAP
+extern ?HEAP_END
+extern ?set_stack_bottom
+global ?our_code_starts_here" in
   let suffix = sprintf "
 ?err_comp_not_num:%s
 ?err_arith_not_num:%s
@@ -1519,10 +1519,10 @@ global our_code_starts_here" in
        ] in
      let set_stack_bottom =
        [
-         ILabel("our_code_starts_here");
+         ILabel("?our_code_starts_here");
          IMov(Reg R12, Reg RDI);
        ]
-       @ (native_call (Label "set_stack_bottom") [Reg(RBP)])
+       @ (native_call (Label "?set_stack_bottom") [Reg(RBP)])
        @ [
            IMov(Reg RDI, Reg R12)
          ] in

@@ -14,7 +14,7 @@ let tvg name program input expected = name>::test_run_valgrind ~args:[] ~std_inp
 let tvgc name heap_size program input expected = name>::test_run_valgrind ~args:[string_of_int heap_size] ~std_input:input program name expected;;
 let terr name program input expected = name>::test_err ~args:[] ~std_input:input program name expected;;
 let tgcerr name heap_size program input expected = name>::test_err ~args:[string_of_int heap_size] ~std_input:input program name expected;;
-let tanf name program input expected = name>::fun _ ->
+let tanf name program _input expected = name>::fun _ ->
   assert_equal expected (anf (tag program)) ~printer:string_of_aprogram;;
 
 let tparse name program expected = name>::fun _ ->
@@ -115,6 +115,12 @@ f(6)
   " "" "11";
   t "stack_alloc1" "let x = 5 in let y = 6 in let z = y in let f = (lambda: x + z) in let h = (lambda: z + y) in f()" "" "11";
   t "stack_alloc2" "let a = 1, b = 2, c = 3, d = 4, e = 5 in let f = (lambda: a + e) in f()" "" "6";
+  t "tuple_eq1" "equal((1,), ())" "" "false";
+  t "tuple_eq2" "equal((1, (2, 3), 4), (1, (2, 3), 4))" "" "true";
+  t "tuple_eq3" "equal((1, (2, (3, 4))), (1, (2, (3, 4))))" "" "true";
+  t "tuple_eq4" "equal((1, (2, 3)), (1, 2, 3))" "" "false";
+  t "tuple_eq" "equal((1, 2), (1, 2))" "" "true";
+  t "tuple_eq5" "equal((1, nil, 3), (1, nil, 3))" "" "true";
 ];;
 
 let type_tests = [ 

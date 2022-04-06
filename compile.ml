@@ -56,7 +56,11 @@ let scratch_reg = R11
 let initial_val_env = [];;
 
 let prim_bindings = [];;
-let native_fun_bindings = [("print", (dummy_span, None, Some(1)))];;
+let native_fun_bindings = [
+  ("print", (dummy_span, None, Some(1)));
+  ("input", (dummy_span, None, Some(0)));
+  ("equal", (dummy_span, None, Some(2)));
+];;
 
 let initial_fun_env = prim_bindings @ native_fun_bindings;;
 
@@ -768,7 +772,7 @@ let:
                   ("binop_31" (var_loc 0))
                   ("binop_38" (var_loc 1))
                   ("app_37"   (var_loc 2))))
-      ("?our_code_starts_here"
+      ("our_code_starts_here"
            (("equal_4" (var_loc 0))
             ("print_14" (var_loc 1))
             ("print_22" (var_loc 2))

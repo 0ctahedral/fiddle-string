@@ -1199,7 +1199,7 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
           IMov(Reg(RDI), const_true);
           ICmp(Reg(RAX), Reg(RDI));
           IMov(Reg(RAX), imm_idx);
-          IJne(Label("?err_get_not_num"));*)
+          IJne(Label("?err_get_not_num"));
 
           IMov(Reg(RAX), imm_e);
           ISub(Reg(RAX), Const(1L));
@@ -1441,7 +1441,7 @@ and call (closure : arg) args =
 let add_native_lambdas (p : sourcespan program) =
   let wrap_native name arity =
     let argnames = List.init arity (fun i -> sprintf "%s_arg_%d" name i) in
-    [DFun(name, List.map (fun name -> BName(name, false, dummy_span)) argnames, EApp(EId(name, dummy_span), List.map(fun name -> EId(name, dummy_span)) argnames, Native, dummy_span), dummy_span)]
+    [DFun(name, List.map (fun name -> BName(name, false, dummy_span)) argnames, EApp(EId((sprintf "?%s" name), dummy_span), List.map(fun name -> EId(name, dummy_span)) argnames, Native, dummy_span), dummy_span)]
   in
   match p with
   | Program(declss, body, tag) ->

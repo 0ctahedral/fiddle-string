@@ -56,7 +56,7 @@ let scratch_reg = R11
 let initial_val_env = [];;
 
 let prim_bindings = [];;
-let native_fun_bindings = [];;
+let native_fun_bindings = [("print", (dummy_span, None, Some(1)))];;
 
 let initial_fun_env = prim_bindings @ native_fun_bindings;;
 
@@ -101,7 +101,7 @@ let rec find_one (l : 'a list) (elt : 'a) : bool =
 let rec find_dup (l : 'a list) : 'a option =
   match l with
     | [] -> None
-    | [x] -> None
+    | [_x] -> None
     | x::xs ->
       if find_one xs x then Some(x) else find_dup xs
 ;;
@@ -139,9 +139,9 @@ let is_well_formed (p : sourcespan program) : (sourcespan program) fallible =
     match e with
     | ESeq(e1, e2, _) -> wf_E e1 env @ wf_E e2 env
     | ETuple(es, _) -> List.concat (List.map (fun e -> wf_E e env) es)
-    | EGetItem(e, idx, pos) ->
+    | EGetItem(e, idx, _pos) ->
        wf_E e env @ wf_E idx env
-    | ESetItem(e, idx, newval, pos) ->
+    | ESetItem(e, idx, newval, _pos) ->
        wf_E e env @ wf_E idx env @ wf_E newval env
     | ENil _ -> []
     | EBool _ -> []
@@ -187,14 +187,14 @@ let is_well_formed (p : sourcespan program) : (sourcespan program) fallible =
        let rec process_bindings bindings (env : scope_info name_envt) =
          match bindings with
          | [] -> (env, [])
-         | (b, e, loc)::rest ->
+         | (b, e, _loc)::rest ->
             let errs_e = wf_E e env in
             let (env', errs) = process_binds [b] env in
             let (env'', errs') = process_bindings rest env' in
             (env'', errs @ errs_e @ errs') in
        let (env2, errs) = process_bindings bindings env in
        dupeIds @ errs @ wf_E body env2
-    | EApp(func, args, native, loc) ->
+    | EApp(func, args, _native, loc) ->
        let rec_errors = List.concat (List.map (fun e -> wf_E e env) (func :: args)) in
        (match func with
         | EId(funname, _) -> 
@@ -245,7 +245,7 @@ let is_well_formed (p : sourcespan program) : (sourcespan program) fallible =
        let rec process_bindings bindings env =
          match bindings with
          | [] -> (env, [])
-         | (b, e, loc)::rest ->
+         | (b, e, _loc)::rest ->
             let (env, errs) = process_binds [b] env in
             let errs_e = wf_E e env in
             let (env', errs') = process_bindings rest env in
@@ -325,12 +325,12 @@ let is_well_formed (p : sourcespan program) : (sourcespan program) fallible =
      let rec find name (decls : 'a decl list) =
        match decls with
        | [] -> None
-       | DFun(n, args, _, loc)::rest when n = name -> Some(loc)
+       | DFun(n, _args, _, loc)::_rest when n = name -> Some(loc)
        | _::rest -> find name rest in
      let rec dupe_funbinds decls =
        match decls with
        | [] -> []
-       | DFun(name, args, _, loc)::rest ->
+       | DFun(name, _args, _, loc)::rest ->
           (match find name rest with
           | None -> []
           | Some where -> [DuplicateFun(name, where, loc)]) @ dupe_funbinds rest in
@@ -399,7 +399,7 @@ let desugar (p : sourcespan program) : sourcespan program =
   and expandTuple binds tag source : sourcespan binding list =
     let tupleBind i b =
       match b with
-      | BBlank btag -> []
+      | BBlank _btag -> []
       | BName(_, _, btag) ->
         [(b, EGetItem(source, ENumber(Int64.of_int(i), dummy_span), tag), btag)]
       | BTuple(binds, tag) ->
@@ -434,7 +434,11 @@ let desugar (p : sourcespan program) : sourcespan program =
     | EIf(cond, thn, els, tag) ->
        EIf(helpE cond, helpE thn, helpE els, tag)
     | EApp(name, args, native, tag) ->
-       EApp(helpE name, List.map helpE args, native, tag)
+        let new_call_type = match native with
+        | Native -> Native
+        | Snake -> Snake
+        | _ -> Snake in
+       EApp(helpE name, List.map helpE args, new_call_type, tag)
     | ELambda(binds, body, tag) ->
        let expandBind bind =
          match bind with
@@ -462,7 +466,7 @@ let rename_and_tag (p : tag program) : tag program =
        DFun(name, newArgs, helpE env' body, tag)
   and helpB env b =
     match b with
-    | BBlank tag -> (b, env)
+    | BBlank _tag -> (b, env)
     | BName(name, allow_shadow, tag) ->
        let name' = sprintf "%s_%d" name tag in
        (BName(name', allow_shadow, tag), (name, name') :: env)
@@ -500,13 +504,13 @@ let rename_and_tag (p : tag program) : tag program =
        (try
          EId(find env name, tag)
        with InternalCompilerError _ -> e)
-    | EApp(func, args, native, tag) ->
-       let func = helpE env func in
-       let call_type =
-         (* TODO: If you want, try to determine whether func is a known function name, and if so,
-            whether it's a Snake function or a Native function *)
-         Snake in
-       EApp(func, List.map (helpE env) args, call_type, tag)
+    | EApp(func, args, call_type, tag) ->
+       let new_func =  
+       (match call_type with
+       | Native -> func
+       | _ -> helpE env func) in
+        EApp(new_func, List.map (helpE env) args, call_type, tag)
+
     | ELet(binds, body, tag) ->
        let (binds', env') = helpBG env binds in
        let body' = helpE env' body in
@@ -568,7 +572,7 @@ let anf (p : tag program) : unit aprogram =
          | _ -> raise (InternalCompilerError(sprintf "Encountered a non-simple binding in ANFing a let-rec: %s"
                                              (string_of_bind bind))) in
        let (names, new_binds_setup) = List.split (List.map processBind binds) in
-       let (new_binds, new_setup) = List.split new_binds_setup in
+       let (new_binds, _new_setup) = List.split new_binds_setup in
        let (body_ans, body_setup) = helpC body in
        (body_ans, (BLetRec (List.combine names new_binds)) :: body_setup)
     | ELambda(args, body, _) ->
@@ -578,7 +582,7 @@ let anf (p : tag program) : unit aprogram =
          | _ -> raise (InternalCompilerError(sprintf "Encountered a non-simple binding in ANFing a lambda: %s"
                                              (string_of_bind bind))) in
        (CLambda(List.map processBind args, helpA body, ()), [])
-    | ELet((BTuple(binds, _), exp, _)::rest, body, pos) ->
+    | ELet((BTuple(_binds, _), _exp, _)::_rest, _body, _pos) ->
        raise (InternalCompilerError("Tuple bindings should have been desugared away"))
     | EApp(func, args, native, _) ->
        let (func_ans, func_setup) = helpI func in
@@ -614,7 +618,7 @@ let anf (p : tag program) : unit aprogram =
     | ENil _ -> (ImmNil(), [])
 
     | ESeq(e1, e2, _) ->
-       let (e1_imm, e1_setup) = helpI e1 in
+       let (_e1_imm, e1_setup) = helpI e1 in
        let (e2_imm, e2_setup) = helpI e2 in
        (e2_imm, e1_setup @ e2_setup)
 
@@ -837,7 +841,7 @@ let:
   match prog with
     | AProgram(body, _) -> 
                             (*let body_envt = helpA body si in*)
-        let body_envt = helpA body [("?our_code_starts_here", [])] 1 in
+        let body_envt = helpA body [("our_code_starts_here", [])] 1 in
                             (prog, body_envt)
 ;;
 
@@ -880,23 +884,23 @@ let check_num (a: arg) (l: string) = [
 let check_arith (a: arg) = [
     IMov(Reg(RDI), a);
     ITest(Reg(RDI), HexConst(num_tag_mask));
-    IJnz(Label("?err_arith_not_num"));
+    IJnz(Label("err_arith_not_num"));
     ];;
 
 let check_comp (a: arg) = [
       IMov(Reg(RDI), a);
       ITest(Reg(RDI), HexConst(num_tag_mask));
-      IJnz(Label("?err_comp_not_num"));
+      IJnz(Label("err_comp_not_num"));
 ];;
 
 let check_logic (a: arg) = [
       IMov(Reg(RDI), a);
       ITest(Reg(RDI), HexConst(num_tag_mask));
-      IJz(Label("?err_logic_not_bool"));
+      IJz(Label("err_logic_not_bool"));
 ];;
 
 let check_overflow = [
-      IJo(Label("?err_overflow"));
+      IJo(Label("err_overflow"));
 ];;
 
 let rec replicate x i =
@@ -906,13 +910,13 @@ let rec replicate x i =
 and reserve size tag =
   let ok = sprintf "$memcheck_%d" tag in
   [
-    IInstrComment(IMov(Reg(RAX), LabelContents("?HEAP_END")),
+    IInstrComment(IMov(Reg(RAX), LabelContents("HEAP_END")),
                  sprintf "Reserving %d words" (size / word_size));
     ISub(Reg(RAX), Const(Int64.of_int size));
     ICmp(Reg(RAX), Reg(heap_reg));
     IJge(Label ok);
   ]
-  @ (native_call (Label "?try_gc") [
+  @ (native_call (Label "try_gc") [
          (Sized(QWORD_PTR, Reg(heap_reg))); (* alloc_ptr in C *)
          (Sized(QWORD_PTR, Const(Int64.of_int size))); (* bytes_needed in C *)
          (Sized(QWORD_PTR, Reg(RBP))); (* first_frame in C *)
@@ -960,16 +964,14 @@ and compile_aexpr (e : tag aexpr) (si : int) (env : arg name_envt name_envt) (nu
     | ASeq(bind, body, _) -> let comp_bind = (compile_cexpr bind si env num_args false name) in
                                      let comp_body = (compile_aexpr body si env num_args is_tail name) in
                                      comp_bind @ comp_body
-    | ALetRec([(bname, lambda)], body, _) -> raise (NotYetImplemented "comp aletrec")
-
-        (*let store_closure_ptr = [
+    | ALetRec([(bname, lambda)], body, _) -> let store_closure_ptr = [
                                             IMov(Reg(RAX), Reg(R15));
                                             IAdd(Reg(RAX), Const(closure_tag));
-                                            IMov((find env name), Reg(RAX));
+                                            IMov((find_var_in_envt env bname name), Reg(RAX));
                                             ] in
-                                            let comp_lambda = (compile_cexpr lambda si env num_args is_tail) in
-                                            let comp_body = (compile_aexpr body si env num_args is_tail) in
-                                            store_closure_ptr @ comp_lambda @ comp_body*)
+                                            let comp_lambda = (compile_cexpr lambda si env num_args is_tail bname) in
+                                            let comp_body = (compile_aexpr body si env num_args is_tail name) in
+                                            store_closure_ptr @ comp_lambda @ comp_body
     | ALetRec(_, _, _) -> raise (InternalCompilerError "Mutually recursive functions not implemented")
 and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (num_args : int) (is_tail : bool) (name: string): instruction list =
   match e with
@@ -983,7 +985,7 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
         | Sub1 -> (check_arith imm_arg) @ [
             IMov(Reg(RAX), imm_arg);
             ISub(Reg(RAX), Const(2L));
-            IJo(Label("?err_overflow"));
+            IJo(Label("err_overflow"));
         ]
         | Not -> let is_true_label = sprintf "is_true_%d" tag in
                   let done_label = sprintf "done_%d" tag in
@@ -1051,7 +1053,7 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
             IMov(Reg(RAX), comp_e1);
             IMov(Reg(RDI), comp_e2);
             IMul(Reg(RAX), Reg(RDI));
-            IJo(Label("?err_overflow"));
+            IJo(Label("err_overflow"));
             ISar(Reg(RAX), Const(1L));
           ]
           | And -> check_logic(comp_e1) @ check_logic(comp_e2) @ [
@@ -1130,7 +1132,7 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
           
             (* check if too high *)
             ICmp(Reg(R11), RegOffset(-1, RAX));
-            IJg(Label("?err_get_high_index"));
+            IJg(Label("err_get_high_index"));
           ]
       )
 
@@ -1143,7 +1145,7 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
           IMov(Reg(RAX), cond_imm);
           (* check if boolean *)
           ITest(Reg(RAX), HexConst(num_tag_mask));
-          IJz(Label("?err_if_not_bool"));
+          IJz(Label("err_if_not_bool"));
           (* compare to true *)
           ICmp(Reg(RAX), const_true);
           IJe(Label(thn_label));
@@ -1183,7 +1185,7 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
           IMov(Reg(RDI), const_true);
           ICmp(Reg(RAX), Reg(RDI));
           IMov(Reg(RAX), imm_e);
-          IJne(Label("?err_get_not_tuple"));
+          IJne(Label("err_get_not_tuple"));
         ]
         @ idx_isnum @
         [
@@ -1191,22 +1193,22 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
           IMov(Reg(RDI), const_true);
           ICmp(Reg(RAX), Reg(RDI));
           IMov(Reg(RAX), imm_idx);
-          IJne(Label("?err_get_not_num"));*)
+          IJne(Label("err_get_not_num"));*)
 
           IMov(Reg(RAX), imm_e);
           ISub(Reg(RAX), Const(1L));
           ICmp(Reg(RAX), Const(0L));
-          IJle(Label("?err_nil_deref"));
+          IJle(Label("err_nil_deref"));
           
           (* put index into r11 and divide by 2 to get machine number *)
           IMov(Reg(R11), imm_idx);
           (* TODO: this is causing a segfault because error expects a snakeval *)
           ISar(Reg(R11), Const(1L));
           ICmp(Reg(R11), Const(0L));
-          IJl(Label("?err_get_low_index"));
+          IJl(Label("err_get_low_index"));
 
           ICmp(Reg(R11), RegOffset(0 * word_size, RAX));
-          IJge(Label("?err_get_high_index"));
+          IJge(Label("err_get_high_index"));
 
           IAdd(Reg(R11), Const(1L));
           (* get value*)
@@ -1223,27 +1225,27 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
           IMov(Reg(RDI), const_true);
           ICmp(Reg(RAX), Reg(RDI));
           IMov(Reg(RAX), imm_e);
-          IJne(Label("?err_set_not_tuple"));
+          IJne(Label("err_set_not_tuple"));
         ]
         @ idx_isnum @
         [
           (*IMov(Reg(RDI), const_true);
           ICmp(Reg(RAX), Reg(RDI));
           IMov(Reg(RAX), imm_idx);
-          IJne(Label("?err_set_not_num"));*)
+          IJne(Label("err_set_not_num"));*)
         
           (* deref *)
           IMov(Reg(RAX), imm_e);
           ISub(Reg(RAX), Const(1L));
           ICmp(Reg(RAX), Const(0L));
-          IJle(Label("?err_nil_deref"));
+          IJle(Label("err_nil_deref"));
           (* put index into r11 and divide by 2 to get machine number *)
           IMov(Reg(R11), imm_idx);
           ISar(Reg(R11), Const(1L));
           ICmp(Reg(R11), Const(0L));
-          IJl(Label("?err_set_low_index"));
+          IJl(Label("err_set_low_index"));
           ICmp(Reg(R11), RegOffset(0 * word_size, RAX));
-          IJge(Label("?err_set_high_index"));
+          IJge(Label("err_set_high_index"));
 
           IAdd(Reg(R11), Const(1L));
 
@@ -1356,7 +1358,7 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
         IMov(Reg(R11), Reg(RAX));
         IAnd(Reg(R11), HexConst(closure_tag_mask));
         ICmp(Reg(R11), HexConst(closure_tag));
-        IJne(Label("?err_call_not_closure"));
+        IJne(Label("err_call_not_closure"));
       ] @
       (if (is_tail && (List.length args) <= num_args) then
       [ILineComment("tailcall methinks");] else [])(*@ List.flatten place_all @ [IJmp() ] else []) @*)
@@ -1367,13 +1369,13 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
         ISub(Reg(RAX), Const(closure_tag));
         IMov(Reg(R11), RegOffset(word_size * 0, RAX));
         ICmp(Reg(R11), Const(Int64.of_int (List.length args)));
-        IJne(Label("?err_call_arity_err"));
+        IJne(Label("err_call_arity_err"));
         (* Untag and call code pointer, which is second word in lambda *)
         ICall(RegOffset(word_size * 1, RAX));
         IPop(Reg(RDI));
       ] @ pop_all
 
-    | _ -> raise (InternalCompilerError "invalid function type")
+    | _ -> raise (InternalCompilerError (sprintf "invalid function type %s for %s" (string_of_call_type call_type) (string_of_immexpr lambda_id)))
     ) 
 
 
@@ -1438,59 +1440,62 @@ let add_native_lambdas (p : sourcespan program) =
   in
   match p with
   | Program(declss, body, tag) ->
-    Program((List.fold_left (fun declss (name, (_, arity)) -> (wrap_native name arity)::declss) declss native_fun_bindings), body, tag)
+      Program((List.fold_left (fun declss (name, (_, _, arity_opt)) -> match arity_opt with
+        | Some(arity) -> (wrap_native name arity)::declss 
+        | None -> raise (InternalCompilerError "Encountered undefined arity in initial runtime function definition"))
+      declss native_fun_bindings), body, tag)
 
 let compile_prog (anfed, (env : arg name_envt name_envt)) =
   let prelude =
     "section .text
-extern ?error
-extern ?input
-extern ?print
-extern ?print_stack
-extern ?equal
-extern ?try_gc
-extern ?naive_print_heap
-extern ?HEAP
-extern ?HEAP_END
-extern ?set_stack_bottom
-global ?our_code_starts_here" in
+extern error
+extern input
+extern print
+extern print_stack
+extern equal
+extern try_gc
+extern naive_print_heap
+extern HEAP
+extern HEAP_END
+extern set_stack_bottom
+global our_code_starts_here" in
   let suffix = sprintf "
-?err_comp_not_num:%s
-?err_arith_not_num:%s
-?err_logic_not_bool:%s
-?err_if_not_bool:%s
-?err_overflow:%s
-?err_get_not_tuple:%s
-?err_get_low_index:%s
-?err_get_high_index:%s
-?err_nil_deref:%s
-?err_out_of_memory:%s
-?err_set_not_tuple:%s
-?err_set_low_index:%s
-?err_set_high_index:%s
-?err_call_not_closure:%s
-?err_call_arity_err:%s
+err_comp_not_num:%s
+err_arith_not_num:%s
+err_logic_not_bool:%s
+err_if_not_bool:%s
+err_overflow:%s
+err_get_not_tuple:%s
+err_get_low_index:%s
+err_get_high_index:%s
+err_nil_deref:%s
+err_out_of_memory:%s
+err_set_not_tuple:%s
+err_set_low_index:%s
+err_set_high_index:%s
+err_call_not_closure:%s
+err_call_arity_err:%s
 "
-                       (to_asm (native_call (Label "?error") [Const(err_COMP_NOT_NUM); Reg(scratch_reg)]))
-                       (to_asm (native_call (Label "?error") [Const(err_ARITH_NOT_NUM); Reg(scratch_reg)]))
-                       (to_asm (native_call (Label "?error") [Const(err_LOGIC_NOT_BOOL); Reg(scratch_reg)]))
-                       (to_asm (native_call (Label "?error") [Const(err_IF_NOT_BOOL); Reg(scratch_reg)]))
-                       (to_asm (native_call (Label "?error") [Const(err_OVERFLOW); Reg(RAX)]))
-                       (to_asm (native_call (Label "?error") [Const(err_GET_NOT_TUPLE); Reg(scratch_reg)]))
-                       (to_asm (native_call (Label "?error") [Const(err_GET_LOW_INDEX); Reg(scratch_reg)]))
-                       (to_asm (native_call (Label "?error") [Const(err_GET_HIGH_INDEX); Reg(scratch_reg)]))
-                       (to_asm (native_call (Label "?error") [Const(err_NIL_DEREF); Reg(scratch_reg)]))
-                       (to_asm (native_call (Label "?error") [Const(err_OUT_OF_MEMORY); Reg(scratch_reg)]))
-                       (to_asm (native_call (Label "?error") [Const(err_SET_NOT_TUPLE); Reg(scratch_reg)]))
-                       (to_asm (native_call (Label "?error") [Const(err_SET_LOW_INDEX); Reg(scratch_reg)]))
-                       (to_asm (native_call (Label "?error") [Const(err_SET_HIGH_INDEX); Reg(scratch_reg)]))
-                       (to_asm (native_call (Label "?error") [Const(err_CALL_NOT_CLOSURE); Reg(scratch_reg)]))
-                       (to_asm (native_call (Label "?error") [Const(err_CALL_ARITY_ERR); Reg(scratch_reg)]))
+                       (to_asm (native_call (Label "error") [Const(err_COMP_NOT_NUM); Reg(scratch_reg)]))
+                       (to_asm (native_call (Label "error") [Const(err_ARITH_NOT_NUM); Reg(scratch_reg)]))
+                       (to_asm (native_call (Label "error") [Const(err_LOGIC_NOT_BOOL); Reg(scratch_reg)]))
+                       (to_asm (native_call (Label "error") [Const(err_IF_NOT_BOOL); Reg(scratch_reg)]))
+                       (to_asm (native_call (Label "error") [Const(err_OVERFLOW); Reg(RAX)]))
+                       (to_asm (native_call (Label "error") [Const(err_GET_NOT_TUPLE); Reg(scratch_reg)]))
+                       (to_asm (native_call (Label "error") [Const(err_GET_LOW_INDEX); Reg(scratch_reg)]))
+                       (to_asm (native_call (Label "error") [Const(err_GET_HIGH_INDEX); Reg(scratch_reg)]))
+                       (to_asm (native_call (Label "error") [Const(err_NIL_DEREF); Reg(scratch_reg)]))
+                       (to_asm (native_call (Label "error") [Const(err_OUT_OF_MEMORY); Reg(scratch_reg)]))
+                       (to_asm (native_call (Label "error") [Const(err_SET_NOT_TUPLE); Reg(scratch_reg)]))
+                       (to_asm (native_call (Label "error") [Const(err_SET_LOW_INDEX); Reg(scratch_reg)]))
+                       (to_asm (native_call (Label "error") [Const(err_SET_HIGH_INDEX); Reg(scratch_reg)]))
+                       (to_asm (native_call (Label "error") [Const(err_CALL_NOT_CLOSURE); Reg(scratch_reg)]))
+                       (to_asm (native_call (Label "error") [Const(err_CALL_ARITY_ERR); Reg(scratch_reg)]))
   in
   match anfed with
   | AProgram(body, _) ->
   (* $heap and $size are mock parameter names, just so that compile_fun knows our_code_starts_here takes in 2 parameters *)
-     let (prologue, comp_main, epilogue) = compile_fun "?our_code_starts_here" ["$heap"; "$size"] body env in
+     let (prologue, comp_main, epilogue) = compile_fun "our_code_starts_here" ["$heap"; "$size"] body env in
      let heap_start =
        [
          ILineComment("heap start");
@@ -1501,10 +1506,10 @@ global ?our_code_starts_here" in
        ] in
      let set_stack_bottom =
        [
-         ILabel("?our_code_starts_here");
+         ILabel("our_code_starts_here");
          IMov(Reg R12, Reg RDI);
        ]
-       @ (native_call (Label "?set_stack_bottom") [Reg(RBP)])
+       @ (native_call (Label "set_stack_bottom") [Reg(RBP)])
        @ [
            IMov(Reg RDI, Reg R12)
          ] in

@@ -56,7 +56,7 @@ let scratch_reg = R11
 let initial_val_env = [];;
 
 let prim_bindings = [];;
-let native_fun_bindings = [];;
+let native_fun_bindings = [("print", (dummy_span, None, Some(1)))];;
 
 let initial_fun_env = prim_bindings @ native_fun_bindings;;
 
@@ -101,7 +101,7 @@ let rec find_one (l : 'a list) (elt : 'a) : bool =
 let rec find_dup (l : 'a list) : 'a option =
   match l with
     | [] -> None
-    | [x] -> None
+    | [_x] -> None
     | x::xs ->
       if find_one xs x then Some(x) else find_dup xs
 ;;
@@ -139,9 +139,9 @@ let is_well_formed (p : sourcespan program) : (sourcespan program) fallible =
     match e with
     | ESeq(e1, e2, _) -> wf_E e1 env @ wf_E e2 env
     | ETuple(es, _) -> List.concat (List.map (fun e -> wf_E e env) es)
-    | EGetItem(e, idx, pos) ->
+    | EGetItem(e, idx, _pos) ->
        wf_E e env @ wf_E idx env
-    | ESetItem(e, idx, newval, pos) ->
+    | ESetItem(e, idx, newval, _pos) ->
        wf_E e env @ wf_E idx env @ wf_E newval env
     | ENil _ -> []
     | EBool _ -> []
@@ -187,14 +187,14 @@ let is_well_formed (p : sourcespan program) : (sourcespan program) fallible =
        let rec process_bindings bindings (env : scope_info name_envt) =
          match bindings with
          | [] -> (env, [])
-         | (b, e, loc)::rest ->
+         | (b, e, _loc)::rest ->
             let errs_e = wf_E e env in
             let (env', errs) = process_binds [b] env in
             let (env'', errs') = process_bindings rest env' in
             (env'', errs @ errs_e @ errs') in
        let (env2, errs) = process_bindings bindings env in
        dupeIds @ errs @ wf_E body env2
-    | EApp(func, args, native, loc) ->
+    | EApp(func, args, _native, loc) ->
        let rec_errors = List.concat (List.map (fun e -> wf_E e env) (func :: args)) in
        (match func with
         | EId(funname, _) -> 
@@ -245,7 +245,7 @@ let is_well_formed (p : sourcespan program) : (sourcespan program) fallible =
        let rec process_bindings bindings env =
          match bindings with
          | [] -> (env, [])
-         | (b, e, loc)::rest ->
+         | (b, e, _loc)::rest ->
             let (env, errs) = process_binds [b] env in
             let errs_e = wf_E e env in
             let (env', errs') = process_bindings rest env in
@@ -325,12 +325,12 @@ let is_well_formed (p : sourcespan program) : (sourcespan program) fallible =
      let rec find name (decls : 'a decl list) =
        match decls with
        | [] -> None
-       | DFun(n, args, _, loc)::rest when n = name -> Some(loc)
+       | DFun(n, _args, _, loc)::_rest when n = name -> Some(loc)
        | _::rest -> find name rest in
      let rec dupe_funbinds decls =
        match decls with
        | [] -> []
-       | DFun(name, args, _, loc)::rest ->
+       | DFun(name, _args, _, loc)::rest ->
           (match find name rest with
           | None -> []
           | Some where -> [DuplicateFun(name, where, loc)]) @ dupe_funbinds rest in
@@ -399,7 +399,7 @@ let desugar (p : sourcespan program) : sourcespan program =
   and expandTuple binds tag source : sourcespan binding list =
     let tupleBind i b =
       match b with
-      | BBlank btag -> []
+      | BBlank _btag -> []
       | BName(_, _, btag) ->
         [(b, EGetItem(source, ENumber(Int64.of_int(i), dummy_span), tag), btag)]
       | BTuple(binds, tag) ->
@@ -434,7 +434,11 @@ let desugar (p : sourcespan program) : sourcespan program =
     | EIf(cond, thn, els, tag) ->
        EIf(helpE cond, helpE thn, helpE els, tag)
     | EApp(name, args, native, tag) ->
-       EApp(helpE name, List.map helpE args, native, tag)
+        let new_call_type = match native with
+        | Native -> Native
+        | Snake -> Snake
+        | _ -> Snake in
+       EApp(helpE name, List.map helpE args, new_call_type, tag)
     | ELambda(binds, body, tag) ->
        let expandBind bind =
          match bind with
@@ -462,7 +466,7 @@ let rename_and_tag (p : tag program) : tag program =
        DFun(name, newArgs, helpE env' body, tag)
   and helpB env b =
     match b with
-    | BBlank tag -> (b, env)
+    | BBlank _tag -> (b, env)
     | BName(name, allow_shadow, tag) ->
        let name' = sprintf "%s_%d" name tag in
        (BName(name', allow_shadow, tag), (name, name') :: env)
@@ -500,13 +504,13 @@ let rename_and_tag (p : tag program) : tag program =
        (try
          EId(find env name, tag)
        with InternalCompilerError _ -> e)
-    | EApp(func, args, native, tag) ->
-       let func = helpE env func in
-       let call_type =
-         (* TODO: If you want, try to determine whether func is a known function name, and if so,
-            whether it's a Snake function or a Native function *)
-         Snake in
-       EApp(func, List.map (helpE env) args, call_type, tag)
+    | EApp(func, args, call_type, tag) ->
+       let new_func =  
+       (match call_type with
+       | Native -> func
+       | _ -> helpE env func) in
+        EApp(new_func, List.map (helpE env) args, call_type, tag)
+
     | ELet(binds, body, tag) ->
        let (binds', env') = helpBG env binds in
        let body' = helpE env' body in
@@ -568,7 +572,7 @@ let anf (p : tag program) : unit aprogram =
          | _ -> raise (InternalCompilerError(sprintf "Encountered a non-simple binding in ANFing a let-rec: %s"
                                              (string_of_bind bind))) in
        let (names, new_binds_setup) = List.split (List.map processBind binds) in
-       let (new_binds, new_setup) = List.split new_binds_setup in
+       let (new_binds, _new_setup) = List.split new_binds_setup in
        let (body_ans, body_setup) = helpC body in
        (body_ans, (BLetRec (List.combine names new_binds)) :: body_setup)
     | ELambda(args, body, _) ->
@@ -578,7 +582,7 @@ let anf (p : tag program) : unit aprogram =
          | _ -> raise (InternalCompilerError(sprintf "Encountered a non-simple binding in ANFing a lambda: %s"
                                              (string_of_bind bind))) in
        (CLambda(List.map processBind args, helpA body, ()), [])
-    | ELet((BTuple(binds, _), exp, _)::rest, body, pos) ->
+    | ELet((BTuple(_binds, _), _exp, _)::_rest, _body, _pos) ->
        raise (InternalCompilerError("Tuple bindings should have been desugared away"))
     | EApp(func, args, native, _) ->
        let (func_ans, func_setup) = helpI func in
@@ -614,7 +618,7 @@ let anf (p : tag program) : unit aprogram =
     | ENil _ -> (ImmNil(), [])
 
     | ESeq(e1, e2, _) ->
-       let (e1_imm, e1_setup) = helpI e1 in
+       let (_e1_imm, e1_setup) = helpI e1 in
        let (e2_imm, e2_setup) = helpI e2 in
        (e2_imm, e1_setup @ e2_setup)
 
@@ -960,16 +964,14 @@ and compile_aexpr (e : tag aexpr) (si : int) (env : arg name_envt name_envt) (nu
     | ASeq(bind, body, _) -> let comp_bind = (compile_cexpr bind si env num_args false name) in
                                      let comp_body = (compile_aexpr body si env num_args is_tail name) in
                                      comp_bind @ comp_body
-    | ALetRec([(bname, lambda)], body, _) -> raise (NotYetImplemented "comp aletrec")
-
-        (*let store_closure_ptr = [
+    | ALetRec([(bname, lambda)], body, _) -> let store_closure_ptr = [
                                             IMov(Reg(RAX), Reg(R15));
                                             IAdd(Reg(RAX), Const(closure_tag));
-                                            IMov((find env name), Reg(RAX));
+                                            IMov((find_var_in_envt env bname name), Reg(RAX));
                                             ] in
-                                            let comp_lambda = (compile_cexpr lambda si env num_args is_tail) in
-                                            let comp_body = (compile_aexpr body si env num_args is_tail) in
-                                            store_closure_ptr @ comp_lambda @ comp_body*)
+                                            let comp_lambda = (compile_cexpr lambda si env num_args is_tail bname) in
+                                            let comp_body = (compile_aexpr body si env num_args is_tail name) in
+                                            store_closure_ptr @ comp_lambda @ comp_body
     | ALetRec(_, _, _) -> raise (InternalCompilerError "Mutually recursive functions not implemented")
 and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (num_args : int) (is_tail : bool) (name: string): instruction list =
   match e with
@@ -1438,7 +1440,10 @@ let add_native_lambdas (p : sourcespan program) =
   in
   match p with
   | Program(declss, body, tag) ->
-    Program((List.fold_left (fun declss (name, (_, arity)) -> (wrap_native name arity)::declss) declss native_fun_bindings), body, tag)
+      Program((List.fold_left (fun declss (name, (_, _, arity_opt)) -> match arity_opt with
+        | Some(arity) -> (wrap_native name arity)::declss 
+        | None -> raise (InternalCompilerError "Encountered undefined arity in initial runtime function definition"))
+      declss native_fun_bindings), body, tag)
 
 let compile_prog (anfed, (env : arg name_envt name_envt)) =
   let prelude =

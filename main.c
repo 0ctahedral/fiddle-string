@@ -6,22 +6,21 @@
 
 typedef uint64_t SNAKEVAL;
 
+extern SNAKEVAL our_code_starts_here(uint64_t *HEAP,
+                                     uint64_t size) asm("our_code_starts_here");
+extern void error() asm("error");
 extern SNAKEVAL
-our_code_starts_here(uint64_t *HEAP,
-                     uint64_t size) asm("?our_code_starts_here");
-extern void error() asm("?error");
-extern SNAKEVAL
-set_stack_bottom(uint64_t *stack_bottom) asm("?set_stack_bottom");
-extern SNAKEVAL print(SNAKEVAL val) asm("?print");
-extern SNAKEVAL input() asm("?input");
+set_stack_bottom(uint64_t *stack_bottom) asm("set_stack_bottom");
+extern SNAKEVAL print(SNAKEVAL val) asm("print");
+extern SNAKEVAL input() asm("input");
 extern SNAKEVAL printStack(SNAKEVAL val, uint64_t *rsp, uint64_t *rbp,
-                           uint64_t args) asm("?print_stack");
-extern SNAKEVAL equal(SNAKEVAL val1, SNAKEVAL val2) asm("?equal");
+                           uint64_t args) asm("print_stack");
+extern SNAKEVAL equal(SNAKEVAL val1, SNAKEVAL val2) asm("equal");
 extern uint64_t *try_gc(uint64_t *alloc_ptr, uint64_t amount_needed,
                         uint64_t *first_frame,
-                        uint64_t *stack_top) asm("?try_gc");
-extern uint64_t *HEAP_END asm("?HEAP_END");
-extern uint64_t *HEAP asm("?HEAP");
+                        uint64_t *stack_top) asm("try_gc");
+extern uint64_t *HEAP_END asm("HEAP_END");
+extern uint64_t *HEAP asm("HEAP");
 
 const uint64_t NUM_TAG_MASK = 0x0000000000000001;
 const uint64_t BOOL_TAG_MASK = 0x0000000000000007;
@@ -44,13 +43,15 @@ const uint64_t ERR_OVERFLOW = 5;
 const uint64_t ERR_GET_NOT_TUPLE = 6;
 const uint64_t ERR_GET_LOW_INDEX = 7;
 const uint64_t ERR_GET_HIGH_INDEX = 8;
-const uint64_t ERR_NIL_DEREF = 9;
-const uint64_t ERR_OUT_OF_MEMORY = 10;
-const uint64_t ERR_SET_NOT_TUPLE = 11;
-const uint64_t ERR_SET_LOW_INDEX = 12;
-const uint64_t ERR_SET_HIGH_INDEX = 13;
-const uint64_t ERR_CALL_NOT_CLOSURE = 14;
-const uint64_t ERR_CALL_ARITY_ERR = 15;
+const uint64_t ERR_GET_NOT_NUM = 9;
+const uint64_t ERR_NIL_DEREF = 10;
+const uint64_t ERR_OUT_OF_MEMORY = 11;
+const uint64_t ERR_SET_NOT_TUPLE = 12;
+const uint64_t ERR_SET_LOW_INDEX = 13;
+const uint64_t ERR_SET_NOT_NUM = 14;
+const uint64_t ERR_SET_HIGH_INDEX = 15;
+const uint64_t ERR_CALL_NOT_CLOSURE = 16;
+const uint64_t ERR_CALL_ARITY_ERR = 17;
 
 size_t HEAP_SIZE;
 uint64_t *STACK_BOTTOM;
@@ -260,6 +261,10 @@ void error(uint64_t code, SNAKEVAL val) {
   case ERR_GET_HIGH_INDEX:
     fprintf(stderr, "Error: index too large to get, got %ld\n", (uint64_t)val);
     break;
+  case ERR_GET_NOT_NUM:
+    fprintf(stderr, "Error: get expected numeric index, got ");
+    printHelp(stderr, val);
+    break;
   case ERR_NIL_DEREF:
     fprintf(stderr, "Error: tried to access component of nil\n");
     break;
@@ -275,6 +280,10 @@ void error(uint64_t code, SNAKEVAL val) {
   case ERR_SET_HIGH_INDEX:
     fprintf(stderr, "Error: index too large to set\n");
     break;
+  case ERR_SET_NOT_NUM:
+    fprintf(stderr, "Error: set expected numeric index, got ");
+    printHelp(stderr, val);
+    break;
   case ERR_CALL_NOT_CLOSURE:
     fprintf(stderr, "Error: tried to call a non-closure value: ");
     printHelp(stderr, val);
@@ -286,9 +295,6 @@ void error(uint64_t code, SNAKEVAL val) {
     fprintf(stderr, "Error: Unknown error code: %ld, val: ", code);
     printHelp(stderr, val);
   }
-  fprintf(stderr, "\n%p ==> ", (uint64_t *)val);
-  printHelp(stderr, val);
-  fprintf(stderr, "\n");
   fflush(stderr);
   // TODO: implement naive_print_heap(HEAP, HEAP_END);
   fflush(stdout);

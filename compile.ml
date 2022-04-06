@@ -38,13 +38,16 @@ let err_OVERFLOW         = 5L
 let err_GET_NOT_TUPLE    = 6L
 let err_GET_LOW_INDEX    = 7L
 let err_GET_HIGH_INDEX   = 8L
-let err_NIL_DEREF        = 9L
-let err_OUT_OF_MEMORY    = 10L
-let err_SET_NOT_TUPLE    = 11L
-let err_SET_LOW_INDEX    = 12L
-let err_SET_HIGH_INDEX   = 13L
-let err_CALL_NOT_CLOSURE = 14L
-let err_CALL_ARITY_ERR   = 15L
+let err_GET_NOT_NUM      = 9L
+let err_NIL_DEREF        = 10L
+let err_OUT_OF_MEMORY    = 11L
+let err_SET_NOT_TUPLE    = 12L
+let err_SET_LOW_INDEX    = 13L
+let err_SET_NOT_NUM      = 14L
+let err_SET_HIGH_INDEX   = 15L
+let err_CALL_NOT_CLOSURE = 16L
+let err_CALL_ARITY_ERR   = 17L
+
 
 let dummy_span = (Lexing.dummy_pos, Lexing.dummy_pos);;
 
@@ -56,7 +59,11 @@ let scratch_reg = R11
 let initial_val_env = [];;
 
 let prim_bindings = [];;
-let native_fun_bindings = [];;
+let native_fun_bindings = [
+  ("print", (dummy_span, None, Some(1)));
+  ("input", (dummy_span, None, Some(0)));
+  ("equal", (dummy_span, None, Some(2)));
+];;
 
 let initial_fun_env = prim_bindings @ native_fun_bindings;;
 
@@ -101,7 +108,7 @@ let rec find_one (l : 'a list) (elt : 'a) : bool =
 let rec find_dup (l : 'a list) : 'a option =
   match l with
     | [] -> None
-    | [x] -> None
+    | [_x] -> None
     | x::xs ->
       if find_one xs x then Some(x) else find_dup xs
 ;;
@@ -139,9 +146,9 @@ let is_well_formed (p : sourcespan program) : (sourcespan program) fallible =
     match e with
     | ESeq(e1, e2, _) -> wf_E e1 env @ wf_E e2 env
     | ETuple(es, _) -> List.concat (List.map (fun e -> wf_E e env) es)
-    | EGetItem(e, idx, pos) ->
+    | EGetItem(e, idx, _pos) ->
        wf_E e env @ wf_E idx env
-    | ESetItem(e, idx, newval, pos) ->
+    | ESetItem(e, idx, newval, _pos) ->
        wf_E e env @ wf_E idx env @ wf_E newval env
     | ENil _ -> []
     | EBool _ -> []
@@ -187,14 +194,14 @@ let is_well_formed (p : sourcespan program) : (sourcespan program) fallible =
        let rec process_bindings bindings (env : scope_info name_envt) =
          match bindings with
          | [] -> (env, [])
-         | (b, e, loc)::rest ->
+         | (b, e, _loc)::rest ->
             let errs_e = wf_E e env in
             let (env', errs) = process_binds [b] env in
             let (env'', errs') = process_bindings rest env' in
             (env'', errs @ errs_e @ errs') in
        let (env2, errs) = process_bindings bindings env in
        dupeIds @ errs @ wf_E body env2
-    | EApp(func, args, native, loc) ->
+    | EApp(func, args, _native, loc) ->
        let rec_errors = List.concat (List.map (fun e -> wf_E e env) (func :: args)) in
        (match func with
         | EId(funname, _) -> 
@@ -245,7 +252,7 @@ let is_well_formed (p : sourcespan program) : (sourcespan program) fallible =
        let rec process_bindings bindings env =
          match bindings with
          | [] -> (env, [])
-         | (b, e, loc)::rest ->
+         | (b, e, _loc)::rest ->
             let (env, errs) = process_binds [b] env in
             let errs_e = wf_E e env in
             let (env', errs') = process_bindings rest env in
@@ -325,12 +332,12 @@ let is_well_formed (p : sourcespan program) : (sourcespan program) fallible =
      let rec find name (decls : 'a decl list) =
        match decls with
        | [] -> None
-       | DFun(n, args, _, loc)::rest when n = name -> Some(loc)
+       | DFun(n, _args, _, loc)::_rest when n = name -> Some(loc)
        | _::rest -> find name rest in
      let rec dupe_funbinds decls =
        match decls with
        | [] -> []
-       | DFun(name, args, _, loc)::rest ->
+       | DFun(name, _args, _, loc)::rest ->
           (match find name rest with
           | None -> []
           | Some where -> [DuplicateFun(name, where, loc)]) @ dupe_funbinds rest in
@@ -399,7 +406,7 @@ let desugar (p : sourcespan program) : sourcespan program =
   and expandTuple binds tag source : sourcespan binding list =
     let tupleBind i b =
       match b with
-      | BBlank btag -> []
+      | BBlank _btag -> []
       | BName(_, _, btag) ->
         [(b, EGetItem(source, ENumber(Int64.of_int(i), dummy_span), tag), btag)]
       | BTuple(binds, tag) ->
@@ -434,7 +441,11 @@ let desugar (p : sourcespan program) : sourcespan program =
     | EIf(cond, thn, els, tag) ->
        EIf(helpE cond, helpE thn, helpE els, tag)
     | EApp(name, args, native, tag) ->
-       EApp(helpE name, List.map helpE args, native, tag)
+        let new_call_type = match native with
+        | Native -> Native
+        | Snake -> Snake
+        | _ -> Snake in
+       EApp(helpE name, List.map helpE args, new_call_type, tag)
     | ELambda(binds, body, tag) ->
        let expandBind bind =
          match bind with
@@ -462,7 +473,7 @@ let rename_and_tag (p : tag program) : tag program =
        DFun(name, newArgs, helpE env' body, tag)
   and helpB env b =
     match b with
-    | BBlank tag -> (b, env)
+    | BBlank _tag -> (b, env)
     | BName(name, allow_shadow, tag) ->
        let name' = sprintf "%s_%d" name tag in
        (BName(name', allow_shadow, tag), (name, name') :: env)
@@ -500,13 +511,13 @@ let rename_and_tag (p : tag program) : tag program =
        (try
          EId(find env name, tag)
        with InternalCompilerError _ -> e)
-    | EApp(func, args, native, tag) ->
-       let func = helpE env func in
-       let call_type =
-         (* TODO: If you want, try to determine whether func is a known function name, and if so,
-            whether it's a Snake function or a Native function *)
-         Snake in
-       EApp(func, List.map (helpE env) args, call_type, tag)
+    | EApp(func, args, call_type, tag) ->
+       let new_func =  
+       (match call_type with
+       | Native -> func
+       | _ -> helpE env func) in
+        EApp(new_func, List.map (helpE env) args, call_type, tag)
+
     | ELet(binds, body, tag) ->
        let (binds', env') = helpBG env binds in
        let body' = helpE env' body in
@@ -568,7 +579,7 @@ let anf (p : tag program) : unit aprogram =
          | _ -> raise (InternalCompilerError(sprintf "Encountered a non-simple binding in ANFing a let-rec: %s"
                                              (string_of_bind bind))) in
        let (names, new_binds_setup) = List.split (List.map processBind binds) in
-       let (new_binds, new_setup) = List.split new_binds_setup in
+       let (new_binds, _new_setup) = List.split new_binds_setup in
        let (body_ans, body_setup) = helpC body in
        (body_ans, (BLetRec (List.combine names new_binds)) :: body_setup)
     | ELambda(args, body, _) ->
@@ -578,7 +589,7 @@ let anf (p : tag program) : unit aprogram =
          | _ -> raise (InternalCompilerError(sprintf "Encountered a non-simple binding in ANFing a lambda: %s"
                                              (string_of_bind bind))) in
        (CLambda(List.map processBind args, helpA body, ()), [])
-    | ELet((BTuple(binds, _), exp, _)::rest, body, pos) ->
+    | ELet((BTuple(_binds, _), _exp, _)::_rest, _body, _pos) ->
        raise (InternalCompilerError("Tuple bindings should have been desugared away"))
     | EApp(func, args, native, _) ->
        let (func_ans, func_setup) = helpI func in
@@ -614,7 +625,7 @@ let anf (p : tag program) : unit aprogram =
     | ENil _ -> (ImmNil(), [])
 
     | ESeq(e1, e2, _) ->
-       let (e1_imm, e1_setup) = helpI e1 in
+       let (_e1_imm, e1_setup) = helpI e1 in
        let (e2_imm, e2_setup) = helpI e2 in
        (e2_imm, e1_setup @ e2_setup)
 
@@ -731,9 +742,9 @@ let free_vars (e: 'a aexpr) : string list =
     | ImmId(name, _) -> if (is_bound env name) then [] else [name]
     | ImmNil(_) -> []
   and is_bound (env: string list) (name: string) : bool =
-  match env with
-  | [] -> false
-  | first::rest -> (first = name) || (is_bound rest name)
+    match env with
+    | [] -> false
+    | first::rest -> (first = name) || (is_bound rest name)
   in
   helpA e []
 ;;
@@ -760,28 +771,18 @@ let:
              fact(3)
 
 
-    (("?our_code_starts_here"
-           (("equal_4" (var_loc 0))
-            ("print_14" (var_loc 1))
-            ("print_22" (var_loc 2))
-            ("fact_28" (var_loc 3))))
-
-      ("fact_28" (("n_42" (arg 0))
+    (("fact_28" (("n_42" (arg 0))
                   ("binop_31" (var_loc 0))
                   ("binop_38" (var_loc 1))
                   ("app_37"   (var_loc 2))))
-      ("input_22"
-           ("*input" [label]))
-      ("print_14"
-        (("a_19" arg_loc)
-          ("*print" [label])))
-      ("equal_4"
-        (("a_10" arg_loc)
-          ("b_11" arg_loc)
-          ("*equal" [label]))))
+      ("our_code_starts_here"
+           (("equal_4" (var_loc 0))
+            ("print_14" (var_loc 1))
+            ("print_22" (var_loc 2))
+            ("fact_28" (var_loc 3)))))
 
-    going up one on the list is your parent scope
-    search goes up in the list, recursively checking the parent scope
+    going down one on the list is your parent scope
+    search goes down in the list, recursively checking the parent scope
    *)
   (* TODO: are the stack numbers correct? *)
   let rec helpA (expr : tag aexpr) (env: arg name_envt name_envt) (si : int) : arg name_envt name_envt =
@@ -823,17 +824,15 @@ let:
              This allows us to look for the most recent variable declaration and use that name for
              this new environment *)
           let env_name = get_last_var env in
-          let args_env = List.mapi (fun i name ->
-            (name, RegOffset((i + 3) * word_size, RBP))) args in
-          (* TODO:
-          where should the stack inside a lambda start? 
-          when we execute it, we want to start at 0 right?
-          but when we create it we don't want to clobber the outer env?
-           *)
+          let new_si, args_env = List.fold_left (fun (new_si, args_env) name ->
+            (* NEW STRAT: put all variables on the stack and it is the job of the setup to get them out *)
+            (new_si + 1, (name, RegOffset(~-new_si * word_size, RBP))::args_env)) (1, []) args in
           let fv = (free_vars (ACExpr cexpr)) in
           (* TODO: is the tuple offset corrct? *)
-          let fv_env = List.mapi (fun i x -> (x, RegOffset(word_size * (3 + i), RDI))) fv in
-          let new_env = helpA body [(env_name, fv_env @ args_env)] si in
+          let new_si, fv_env = List.fold_left (fun (new_si, fv_env) x ->
+            (new_si + 1, (x, RegOffset(~-new_si * word_size, RBP)) :: fv_env)
+          ) (new_si, []) fv  in
+          let new_env = helpA body [(env_name, fv_env @ args_env)] new_si in
           new_env
       | _ -> raise (InternalCompilerError "helpL should only be called on a lambda")
   (* helper to add a variable to an environment so we don't have to do destructuring up front *)
@@ -849,24 +848,38 @@ let:
   match prog with
     | AProgram(body, _) -> 
                             (*let body_envt = helpA body si in*)
-        let body_envt = helpA body [("?our_code_starts_here", [])] 1 in
+        let body_envt = helpA body [("our_code_starts_here", [])] 1 in
                             (prog, body_envt)
 ;;
 
-let rec find_var_envt (env : arg name_envt name_envt) (name : string) = 
-  match env with
-  | [] -> raise (InternalCompilerError "")
-  | (_, cenv)::rest ->
-      match find_var cenv name with
-      | Some(loc) -> loc
-      | None -> find_var_envt rest name
-and find_var (l : arg name_envt) (name : string) : 'a option =
+let rec find_var (l : arg name_envt) (name : string) : 'a option =
   match l with
     | [] -> None
     | (x, loc)::rest ->
       if x == name then Some(loc) else find_var rest name
+and find_env (env : arg name_envt name_envt) (name : string) : arg name_envt =
+  match env with
+  | [] -> raise (InternalCompilerError (sprintf "env %s not found" name))
+  | (n, cenv)::rest ->
+        if n = name then cenv else find_env rest name
 ;;
 
+(* looks in a given envt first, then *)
+let find_var_in_envt (env : arg name_envt name_envt) (var : string) (env_name : string)= 
+  let rec find_var_envt (env : arg name_envt name_envt) (name : string) = 
+    match env with
+    | [] -> raise (InternalCompilerError (sprintf "var %s not found" name))
+    | (_, cenv)::rest ->
+        match find_var cenv name with
+        | Some(loc) -> loc
+        | None -> find_var_envt rest name in
+  if env_name = "" then
+    find_var_envt env var
+  else
+    let targ_env = find_env env env_name in
+      match find_var targ_env var with
+      | None -> find_var_envt env var
+      | Some(loc) -> loc
 ;;
 
 let check_num (a: arg) (l: string) = [
@@ -878,50 +891,101 @@ let check_num (a: arg) (l: string) = [
 let check_arith (a: arg) = [
     IMov(Reg(RDI), a);
     ITest(Reg(RDI), HexConst(num_tag_mask));
-    IJnz(Label("?err_arith_not_num"));
+    IJnz(Label("err_arith_not_num"));
     ];;
 
 let check_comp (a: arg) = [
       IMov(Reg(RDI), a);
       ITest(Reg(RDI), HexConst(num_tag_mask));
-      IJnz(Label("?err_comp_not_num"));
+      IJnz(Label("err_comp_not_num"));
 ];;
 
 let check_logic (a: arg) = [
       IMov(Reg(RDI), a);
       ITest(Reg(RDI), HexConst(num_tag_mask));
-      IJz(Label("?err_logic_not_bool"));
+      IJz(Label("err_logic_not_bool"));
 ];;
 
 let check_overflow = [
-      IJo(Label("?err_overflow"));
+      IJo(Label("err_overflow"));
 ];;
 
-let rec compile_aexpr (e : tag aexpr) (si : int) (env : arg name_envt name_envt) (num_args : int) (is_tail : bool) : instruction list =
-  match e with
-    | ALet(name, bind, body, _tag) -> let comp_bind = (compile_cexpr bind si env num_args false) in
-                                     let comp_body = (compile_aexpr body si env num_args is_tail) in
-                                     [ILineComment("let starts here");] @ comp_bind @ [IMov((find_var_envt env name), Reg(RAX))] @ comp_body
-          
-    | ACExpr(cexpr) -> (compile_cexpr cexpr si env num_args is_tail)
-    | ASeq(bind, body, _) -> let comp_bind = (compile_cexpr bind si env num_args false) in
-                                     let comp_body = (compile_aexpr body si env num_args is_tail) in
-                                     comp_bind @ comp_body
-    | ALetRec([(name, lambda)], body, _) -> raise (NotYetImplemented "comp aletrec")
+let rec replicate x i =
+  if i = 0 then []
+  else x :: (replicate x (i - 1))
 
-        (*let store_closure_ptr = [
+and reserve size tag =
+  (* For testing, perform gc on each allocation *)
+  (*
+  let ok = sprintf "$memcheck_%d" tag in
+  [
+    IInstrComment(IMov(Reg(RAX), LabelContents("HEAP_END")),
+                 sprintf "Reserving %d words" (size / word_size));
+    ISub(Reg(RAX), Const(Int64.of_int size));
+    ICmp(Reg(RAX), Reg(heap_reg));
+    IJge(Label ok);
+  ]
+  @*) (native_call (Label "try_gc") [
+         (Sized(QWORD_PTR, Reg(heap_reg))); (* alloc_ptr in C *)
+         (Sized(QWORD_PTR, Const(Int64.of_int size))); (* bytes_needed in C *)
+         (Sized(QWORD_PTR, Reg(RBP))); (* first_frame in C *)
+         (Sized(QWORD_PTR, Reg(RSP))); (* stack_top in C *)
+    ])
+  @ [
+      IInstrComment(IMov(Reg(heap_reg), Reg(RAX)), "assume gc success if returning here, so RAX holds the new heap_reg value");
+      (*ILabel(ok);*)
+    ]
+
+(* IMPLEMENT THIS FROM YOUR PREVIOUS ASSIGNMENT *)
+(* Additionally, you are provided an initial environment of values that you may want to
+   assume should take up the first few stack slots.  See the compiliation of Programs
+   below for one way to use this ability... *)
+ and compile_fun name args body (initial_env: arg name_envt name_envt) = (
+   let env = find_env initial_env name in
+   let stack_size = List.length env in
+   let arity = (List.length args) in
+   [
+   ILineComment("prologue");
+   IPush(Reg(RBP));
+   IMov(Reg(RBP), Reg(RSP));
+   IAdd(Reg(RSP), Const(Int64.of_int (~-word_size * (stack_size + (stack_size mod 2)))));
+   ],
+   [ ILineComment("body") ] @ (compile_aexpr body 0 initial_env arity false name),
+   [
+   ILineComment("pop arguments and return?");
+   IMov(Reg(RSP), Reg(RBP));
+   IPop(Reg(RBP));
+   IRet;
+   ])
+and compile_aexpr (e : tag aexpr) (si : int) (env : arg name_envt name_envt) (num_args : int) (is_tail : bool) (name : string) : instruction list =
+  match e with
+    | ALet(bname, bind, body, _tag) -> let comp_bind =
+      match bind with
+      | CLambda(_, _, _) -> (compile_cexpr bind si env num_args false bname)
+      | _ -> (compile_cexpr bind si env num_args false name)
+   in
+                                     let comp_body = (compile_aexpr body si env num_args is_tail name) in
+                                     [ILineComment("let starts here");] @ comp_bind @
+                                     [IMov((find_var_in_envt env bname name), Reg(RAX))] @ comp_body
+
+          
+    | ACExpr(cexpr) -> (compile_cexpr cexpr si env num_args is_tail name)
+    | ASeq(bind, body, _) -> let comp_bind = (compile_cexpr bind si env num_args false name) in
+                                     let comp_body = (compile_aexpr body si env num_args is_tail name) in
+                                     comp_bind @ comp_body
+    | ALetRec([(bname, lambda)], body, _) -> let store_closure_ptr = [
                                             IMov(Reg(RAX), Reg(R15));
                                             IAdd(Reg(RAX), Const(closure_tag));
-                                            IMov((find env name), Reg(RAX));
+                                            IMov((find_var_in_envt env bname name), Reg(RAX));
                                             ] in
-                                            let comp_lambda = (compile_cexpr lambda si env num_args is_tail) in
-                                            let comp_body = (compile_aexpr body si env num_args is_tail) in
-                                            store_closure_ptr @ comp_lambda @ comp_body*)
+                                            let comp_lambda = (compile_cexpr lambda si env num_args is_tail bname) in
+                                            let comp_body = (compile_aexpr body si env num_args is_tail name) in
+                                            store_closure_ptr @ comp_lambda @ comp_body
     | ALetRec(_, _, _) -> raise (InternalCompilerError "Mutually recursive functions not implemented")
-and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (num_args : int) (is_tail : bool) : instruction list =
+and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (num_args : int) (is_tail : bool) (name: string): instruction list =
   match e with
-    | CImmExpr(imm) -> [IMov(Reg(RAX), compile_imm imm env)]
-    | CPrim1(prim1, imm, tag) -> (let imm_arg = (compile_imm imm env) in
+    | CImmExpr(imm) -> [IMov(Reg(RAX), compile_imm imm env name)]
+    | CPrim1(prim1, imm, tag) -> (let imm_arg = (compile_imm imm env name) in
       match prim1 with
         | Add1 -> (check_arith imm_arg) @ [
             IMov(Reg(RAX), imm_arg);
@@ -930,7 +994,7 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
         | Sub1 -> (check_arith imm_arg) @ [
             IMov(Reg(RAX), imm_arg);
             ISub(Reg(RAX), Const(2L));
-            IJo(Label("?err_overflow"));
+            IJo(Label("err_overflow"));
         ]
         | Not -> let is_true_label = sprintf "is_true_%d" tag in
                   let done_label = sprintf "done_%d" tag in
@@ -979,8 +1043,8 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
     )
 
     | CPrim2(prim2, e1, e2, tag) -> 
-        (let comp_e1 = (compile_imm e1 env) in
-        let comp_e2 = (compile_imm e2 env) in
+        (let comp_e1 = (compile_imm e1 env name) in
+        let comp_e2 = (compile_imm e2 env name) in
         let is_true_label = sprintf "is_true_%d" tag in
         let done_label = sprintf "done_%d" tag in
           match prim2 with
@@ -998,7 +1062,7 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
             IMov(Reg(RAX), comp_e1);
             IMov(Reg(RDI), comp_e2);
             IMul(Reg(RAX), Reg(RDI));
-            IJo(Label("?err_overflow"));
+            IJo(Label("err_overflow"));
             ISar(Reg(RAX), Const(1L));
           ]
           | And -> check_logic(comp_e1) @ check_logic(comp_e2) @ [
@@ -1077,7 +1141,7 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
           
             (* check if too high *)
             ICmp(Reg(R11), RegOffset(-1, RAX));
-            IJg(Label("?err_get_high_index"));
+            IJg(Label("err_get_high_index"));
           ]
       )
 
@@ -1085,26 +1149,26 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
         (let thn_label = sprintf "if_thn_%d" tag in
         let els_label = sprintf "if_els_%d" tag in
         let done_label = sprintf "if_done_%d" tag in
-        let cond_imm = (compile_imm cond env) in
+        let cond_imm = (compile_imm cond env name) in
         [
           IMov(Reg(RAX), cond_imm);
           (* check if boolean *)
           ITest(Reg(RAX), HexConst(num_tag_mask));
-          IJz(Label("?err_if_not_bool"));
+          IJz(Label("err_if_not_bool"));
           (* compare to true *)
           ICmp(Reg(RAX), const_true);
           IJe(Label(thn_label));
         ] @
         (*els label and condition, jump to done*)
         [ ILabel(els_label); ] @
-        (compile_aexpr els si env num_args is_tail) @
+        (compile_aexpr els si env num_args is_tail name) @
         [ IJmp(Label(done_label));
           ILabel(thn_label); ] @
-        (compile_aexpr thn si env num_args is_tail) @
+        (compile_aexpr thn si env num_args is_tail name) @
         [ ILabel(done_label); ])
     | CTuple(exps, tag) -> 
             let total_offset, set_tuple = List.fold_left_map
-            (fun offset e -> (offset + 1, [IMov(Reg(RAX), (compile_imm e env)); IMov(RegOffset(offset * word_size, R15), Reg(RAX))]))
+            (fun offset e -> (offset + 1, [IMov(Reg(RAX), (compile_imm e env name)); IMov(RegOffset(offset * word_size, R15), Reg(RAX))]))
             1 exps in
             [
               ILineComment("tuple starts here");
@@ -1123,76 +1187,74 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
               ILineComment("tuple ends here");
             ]
     | CGetItem(e, idx, tag) -> 
-        let e_istuple = (compile_cexpr (CPrim1(IsTuple, e, tag)) si env num_args is_tail) in
-        let idx_isnum = (compile_cexpr (CPrim1(IsNum, idx, tag)) si env num_args is_tail) in
-        let imm_e = compile_imm e env in
-        let imm_idx = compile_imm idx env in
+        let e_istuple = (compile_cexpr (CPrim1(IsTuple, e, tag)) si env num_args is_tail name) in
+        let idx_isnum = (compile_cexpr (CPrim1(IsNum, idx, tag)) si env num_args is_tail name) in
+        let imm_e = compile_imm e env name in
+        let imm_idx = compile_imm idx env name in
         e_istuple @
         [
           IMov(Reg(RDI), const_true);
           ICmp(Reg(RAX), Reg(RDI));
           IMov(Reg(RAX), imm_e);
-          IJne(Label("?err_get_not_tuple"));
+          IJne(Label("err_get_not_tuple"));
         ]
         @ idx_isnum @
         [
-          (* TODO: not num isn't defined
           IMov(Reg(RDI), const_true);
           ICmp(Reg(RAX), Reg(RDI));
           IMov(Reg(RAX), imm_idx);
-          IJne(Label("?err_get_not_num"));*)
+          IJne(Label("err_get_not_num"));
 
           IMov(Reg(RAX), imm_e);
           ISub(Reg(RAX), Const(1L));
           ICmp(Reg(RAX), Const(0L));
-          IJle(Label("?err_nil_deref"));
+          IJle(Label("err_nil_deref"));
           
           (* put index into r11 and divide by 2 to get machine number *)
           IMov(Reg(R11), imm_idx);
-          (* TODO: this is causing a segfault because error expects a snakeval *)
-          ISar(Reg(R11), Const(1L));
           ICmp(Reg(R11), Const(0L));
-          IJl(Label("?err_get_low_index"));
+          ISar(Reg(R11), Const(1L));
+          IJl(Label("err_get_low_index"));
 
           ICmp(Reg(R11), RegOffset(0 * word_size, RAX));
-          IJge(Label("?err_get_high_index"));
+          IJge(Label("err_get_high_index"));
 
           IAdd(Reg(R11), Const(1L));
           (* get value*)
           IMov(Reg(RAX), RegOffsetReg(RAX, R11, word_size, 0));
         ]
     | CSetItem(e, idx, newval, tag) ->
-        let e_istuple = (compile_cexpr (CPrim1(IsTuple, e, tag)) si env num_args is_tail) in
-        let idx_isnum = (compile_cexpr (CPrim1(IsNum, idx, tag)) si env num_args is_tail) in
-        let imm_e = compile_imm e env in
-        let imm_idx = compile_imm idx env in
-        let imm_newval = compile_imm newval env in
+        let e_istuple = (compile_cexpr (CPrim1(IsTuple, e, tag)) si env num_args is_tail name) in
+        let idx_isnum = (compile_cexpr (CPrim1(IsNum, idx, tag)) si env num_args is_tail name) in
+        let imm_e = compile_imm e env name in
+        let imm_idx = compile_imm idx env name in
+        let imm_newval = compile_imm newval env name in
         e_istuple @
         [
           IMov(Reg(RDI), const_true);
           ICmp(Reg(RAX), Reg(RDI));
           IMov(Reg(RAX), imm_e);
-          IJne(Label("?err_set_not_tuple"));
+          IJne(Label("err_set_not_tuple"));
         ]
         @ idx_isnum @
         [
           (*IMov(Reg(RDI), const_true);
           ICmp(Reg(RAX), Reg(RDI));
           IMov(Reg(RAX), imm_idx);
-          IJne(Label("?err_set_not_num"));*)
+          IJne(Label("err_set_not_num"));*)
         
           (* deref *)
           IMov(Reg(RAX), imm_e);
           ISub(Reg(RAX), Const(1L));
           ICmp(Reg(RAX), Const(0L));
-          IJle(Label("?err_nil_deref"));
+          IJle(Label("err_nil_deref"));
           (* put index into r11 and divide by 2 to get machine number *)
           IMov(Reg(R11), imm_idx);
           ISar(Reg(R11), Const(1L));
           ICmp(Reg(R11), Const(0L));
-          IJl(Label("?err_set_low_index"));
+          IJl(Label("err_set_low_index"));
           ICmp(Reg(R11), RegOffset(0 * word_size, RAX));
-          IJge(Label("?err_set_high_index"));
+          IJge(Label("err_set_high_index"));
 
           IAdd(Reg(R11), Const(1L));
 
@@ -1201,179 +1263,138 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
           IMov(Reg(RAX), imm_newval);
     ]
 
-(*
-    
-        | CLambda(binds, body, tag) ->
-        let label = sprintf "closure_%d" tag in
-        let after_label = sprintf "after_%d" tag in
-        let arity = List.length binds in
-        let exec_env = lambda_stack_alloc e in
-        let stack_slots = (deepest_stack body exec_env) in
-        let stack_slots = stack_slots + (stack_slots mod 2) in
-        let closed_vars = free_vars (ACExpr(e)) in
-        (* 3 words for arity, code ptr, and # of vars closed over, plus a word for each var *)
-        let total_offset = 3 + (List.length closed_vars) in
+    | CLambda(binds, body, tag) ->
+
+    let label = sprintf "%s_closure_%d" name tag in
+    let after_label = sprintf "%s_after_%d" name tag in
+    let arity = List.length binds in
+    let exec_env = [(name, find_env env name)]  in
+    let closed_vars = free_vars (ACExpr(e)) in
+    (* 3 words for arity, code ptr, and # of vars closed over, plus a word for each var *)
+    let total_offset = 3 + (List.length closed_vars) in
+    let (prologue, fnbody, epilogue) = compile_fun name binds body env in
+    [
+      ILineComment("begin lambda");
+      IJmp(Label(after_label));
+      ILabel(label); 
+    ] @ prologue @
+    [
+      ILineComment("get closure from heap");
+      (* Get pointer to closure on heap, which is first argument *)
+      IMov(Reg(RAX), RegOffset(2 * word_size, RBP));
+      ISub(Reg(RAX), Const(closure_tag));
+
+      ILineComment(sprintf "args on stack (%d)" arity);
+    ] @ List.flatten (List.mapi (fun i arg ->
         [
-          IJmp(Label(after_label));
-          ILabel(label); 
-          IPush(Reg(RBP));
-          IMov(Reg(RBP), Reg(RSP));
-          (* Reserve stack space *)
-          IAdd(Reg(RSP), Const(Int64.of_int (-1 * word_size * stack_slots)));
-          (* Get pointer to closure on heap, which is first argument *)
-          IMov(Reg(RAX), RegOffset(2 * word_size, RBP));
-          ISub(Reg(RAX), Const(closure_tag));
-        ]
-        @
-        (* Get values out of closure and onto stack *)
-        (List.flatten (List.mapi (fun i name -> [
-          IMov(Reg(RDI), RegOffset(word_size * (i + 3), RAX));
-          IMov((find exec_env name), Reg(RDI));
-        ]) closed_vars))
-        @
-          [ILabel(sprintf "%s_body" label)]
-        @ (compile_aexpr body si exec_env (List.length binds) is_tail) @ [
-          IMov(Reg(RSP), Reg(RBP));
-          IPop(Reg(RBP));
-          IRet;
-        ] @ [
-          ILabel(after_label);
-          (* arity *)
-          IMov(Reg(RAX), Const(Int64.of_int arity));
-          IMov(RegOffset(0 * word_size, R15), Reg(RAX));
-          (* code ptr *)
-          IMov(Reg(RAX), Label(label));
-          IMov(RegOffset(1 * word_size, R15), Reg(RAX));
-          (* number of closed over vars *)
-          IMov(Reg(RAX), Const(Int64.of_int (List.length closed_vars)));
-          IMov(RegOffset(2 * word_size, R15), Reg(RAX));
-        ] @
-        (List.flatten (List.mapi (fun i name -> [
-          IMov(Reg(RAX), (find env name));
-          IMov(RegOffset(word_size * (i + 3), R15), Reg(RAX));
-        ]) closed_vars))
-        @ [
-        (* pad, put address in RAX, mask it *)
-          IMov(Reg(RAX), Reg(R15));
-          IAdd(Reg(RAX), Const(closure_tag));
-        (* increase the heap pointer and pad if needed *)
-          IAdd(Reg(R15), Const(Int64.of_int (word_size * (total_offset + (total_offset mod 2)))));
-          ILineComment("end of lambda");
-        ]
-    | CApp(lambda_id, args, call_type, _) ->
-        (match call_type with
-        | Native -> 
-            let rec push_args (args: arg list) (regs: reg list) : instruction list * instruction list =
-              match args with
-              | [] -> ([], [])
-              | arg::rest -> match regs with
-                              | [] -> let (rest_push, rest_pop) = (push_args rest regs) in
-                                      (IPush(arg)::rest_push, rest_pop @ [IPop(Reg(RDI))])
-                              | reg::regs -> let (rest_push, rest_pop) = (push_args rest regs) in
-                                      (IMov(Reg(reg), arg)::rest_push, rest_pop)
-            in
-            let (pushes, pops) = push_args (List.map (fun arg -> compile_imm arg env) args) first_six_args_registers in
-            let name = (match lambda_id with
-             | ImmId(name, _) -> name
-             | _ -> raise (InternalCompilerError "expected id")
-             ) in
-            pushes @ [ICall(Label(name))] @ pops
-        | Snake ->
-          let push_all = List.flatten (List.map (fun arg -> [IMov(Reg(R11), (compile_imm arg env)); IPush(Reg(R11))]) (List.rev args)) in
-          let pop_all = (List.map (fun _ -> IPop(Reg(RDI))) args) in
-          (*let _, place_all = List.fold_left_map (fun i arg -> 
-            (i + 1, [
-                      IMov(Reg(RAX), (compile_imm arg env));
-                      IMov(RegOffset(i * word_size, RBP), Reg(RAX))
-                    ])
-          ) 2 args in*)
-          [
-            IMov(Reg(RAX), (compile_imm lambda_id env));
-            IMov(Reg(R11), Reg(RAX));
-            IAnd(Reg(R11), HexConst(closure_tag_mask));
-            ICmp(Reg(R11), HexConst(closure_tag));
-            IJne(Label("call_not_closure"));
-          ] @
-          (if (is_tail && (List.length args) <= num_args) then
-          [ILineComment("tailcall methinks");] else [])(*@ List.flatten place_all @ [IJmp() ] else []) @*)
-          @ push_all @  
-          [
-            (* push pointer as argument *)
-            IPush(Reg(RAX));
-            ISub(Reg(RAX), Const(closure_tag));
-            IMov(Reg(R11), RegOffset(word_size * 0, RAX));
-            ICmp(Reg(R11), Const(Int64.of_int (List.length args)));
-            IJne(Label("call_arity"));
-            (* Untag and call code pointer, which is second word in lambda *)
-            ICall(RegOffset(word_size * 1, RAX));
-            IPop(Reg(RDI));
-          ] @ pop_all
+          IMov(Reg(scratch_reg), RegOffset((i + 3) * word_size, RBP));
+          IMov((find_var_in_envt exec_env arg name), Reg(scratch_reg));
+        ]) binds) @
+    [
+      ILineComment(sprintf "get closed vars (%d)" (List.length closed_vars));
+    ] @
+    (* Get values out of closure and onto stack *)
+    (List.flatten (List.mapi (fun i var -> [
+      IMov(Reg(scratch_reg), RegOffset(word_size * (i + 3), RAX));
+      IMov((find_var_in_envt exec_env var name), Reg(scratch_reg));
+    ]) closed_vars))
+    @ 
+    [
+      ILabel(sprintf "%s_body" label);
+    ] @ fnbody @ epilogue
+    @
+    [
+      ILabel(after_label);
+      (* arity *)
+      IMov(Reg(RAX), Const(Int64.of_int arity));
+      IMov(RegOffset(0 * word_size, R15), Reg(RAX));
+      (* code ptr *)
+      IMov(Reg(RAX), Label(label));
+      IMov(RegOffset(1 * word_size, R15), Reg(RAX));
+      (* number of closed over vars *)
+      IMov(Reg(RAX), Const(Int64.of_int (List.length closed_vars)));
+      IMov(RegOffset(2 * word_size, R15), Reg(RAX));
+    ] @
+    (List.flatten (List.mapi (fun i var -> [
+      IMov(Reg(RAX), (find_var_in_envt env var ""));
+      IMov(RegOffset(word_size * (i + 3), R15), Reg(RAX));
+    ]) closed_vars))
+    @ [
+    (* put address in RAX, mask it *)
+      IMov(Reg(RAX), Reg(R15));
+      IAdd(Reg(RAX), Const(closure_tag));
+    ] @
+    (* pad if needed *)
+    (if (total_offset mod 2) = 0 then [] else [
+      IMov(Reg(scratch_reg), Sized(QWORD_PTR, HexConst(0xEEEEL)));
+      IMov(RegOffset(word_size * ((List.length closed_vars) + 3), R15), Reg(scratch_reg));
+    ])
+    @
+    [
+    (* increase the heap pointer and pad if needed *)
+      IAdd(Reg(R15), Const(Int64.of_int (word_size * (total_offset + (total_offset mod 2)))));
+      ILineComment("end of lambda");
+    ]
+| CApp(lambda_id, args, call_type, _) ->
+    (match call_type with
+    | Native -> 
+        let rec push_args (args: arg list) (regs: reg list) : instruction list * instruction list =
+          match args with
+          | [] -> ([], [])
+          | arg::rest -> match regs with
+                          | [] -> let (rest_push, rest_pop) = (push_args rest regs) in
+                                  (IPush(arg)::rest_push, rest_pop @ [IPop(Reg(RDI))])
+                          | reg::regs -> let (rest_push, rest_pop) = (push_args rest regs) in
+                                  (IMov(Reg(reg), arg)::rest_push, rest_pop)
+        in
+        let (pushes, pops) = push_args (List.map (fun arg -> compile_imm arg env name) args) first_six_args_registers in
+        let name = (match lambda_id with
+         | ImmId(name, _) -> name
+         | _ -> raise (InternalCompilerError "expected id")
+         ) in
+        pushes @ [ICall(Label(name))] @ pops
+    | Snake ->
+      let push_all = List.flatten (List.map (fun arg -> [IMov(Reg(R11), (compile_imm arg env name)); IPush(Reg(R11))]) (List.rev args)) in
+      let pop_all = (List.map (fun _ -> IPop(Reg(RDI))) args) in
+      (*let _, place_all = List.fold_left_map (fun i arg -> 
+        (i + 1, [
+                  IMov(Reg(RAX), (compile_imm arg env));
+                  IMov(RegOffset(i * word_size, RBP), Reg(RAX))
+                ])
+      ) 2 args in*)
+      [
+        IMov(Reg(RAX), (compile_imm lambda_id env name));
+        IMov(Reg(R11), Reg(RAX));
+        IAnd(Reg(R11), HexConst(closure_tag_mask));
+        ICmp(Reg(R11), HexConst(closure_tag));
+        IJne(Label("err_call_not_closure"));
+      ] @
+      (if (is_tail && (List.length args) <= num_args) then
+      [ILineComment("tailcall methinks");] else [])(*@ List.flatten place_all @ [IJmp() ] else []) @*)
+      @ push_all @  
+      [
+        (* push pointer as argument *)
+        IPush(Reg(RAX));
+        ISub(Reg(RAX), Const(closure_tag));
+        IMov(Reg(R11), RegOffset(word_size * 0, RAX));
+        ICmp(Reg(R11), Const(Int64.of_int (List.length args)));
+        IJne(Label("err_call_arity_err"));
+        (* Untag and call code pointer, which is second word in lambda *)
+        ICall(RegOffset(word_size * 1, RAX));
+        IPop(Reg(RDI));
+      ] @ pop_all
 
-        | _ -> raise (InternalCompilerError "invalid function type")
-        ) 
-*)
+    | _ -> raise (InternalCompilerError (sprintf "invalid function type %s for %s" (string_of_call_type call_type) (string_of_immexpr lambda_id)))
+    ) 
 
-    | _ -> raise (NotYetImplemented "have to fix the rest of compile_cexpr")
 
-and compile_imm e env =
+and compile_imm e env ename =
   match e with
   | ImmNum(n, _) -> Const(Int64.shift_left n 1)
   | ImmBool(true, _) -> const_true
   | ImmBool(false, _) -> const_false
-  | ImmId(x, _) -> (find_var_envt env x)
+  | ImmId(x, _) -> (find_var_in_envt env x ename)
   | ImmNil(_) -> HexConst(0x01L)
-
-and replicate x i =
-  if i = 0 then []
-  else x :: (replicate x (i - 1))
-
-and reserve size tag =
-  (* For testing, perform gc on each allocation *)
-  (*
-  let ok = sprintf "$memcheck_%d" tag in
-  [
-    IInstrComment(IMov(Reg(RAX), LabelContents("?HEAP_END")),
-                 sprintf "Reserving %d words" (size / word_size));
-    ISub(Reg(RAX), Const(Int64.of_int size));
-    ICmp(Reg(RAX), Reg(heap_reg));
-    IJge(Label ok);
-  ]
-  @*) (native_call (Label "?try_gc") [
-         (Sized(QWORD_PTR, Reg(heap_reg))); (* alloc_ptr in C *)
-         (Sized(QWORD_PTR, Const(Int64.of_int size))); (* bytes_needed in C *)
-         (Sized(QWORD_PTR, Reg(RBP))); (* first_frame in C *)
-         (Sized(QWORD_PTR, Reg(RSP))); (* stack_top in C *)
-    ])
-  @ [
-      IInstrComment(IMov(Reg(heap_reg), Reg(RAX)), "assume gc success if returning here, so RAX holds the new heap_reg value");
-      (*ILabel(ok);*)
-    ]
-
-(* IMPLEMENT THIS FROM YOUR PREVIOUS ASSIGNMENT *)
-(* Additionally, you are provided an initial environment of values that you may want to
-   assume should take up the first few stack slots.  See the compiliation of Programs
-   below for one way to use this ability... *)
- and compile_fun name args body (initial_env: arg name_envt name_envt) = (
-   let env = find initial_env name in
-   let stack_size = List.length env in
-   [
-   ILineComment("prologue");
-   IPush(Reg(RBP));
-   IMov(Reg(RBP), Reg(RSP));
-   IAdd(Reg(RSP), Const(Int64.of_int (~-word_size * (stack_size + (stack_size mod 2)))));
-   ILineComment(sprintf "num vars: %d" (List.length env));
-   ],
-   [ (* TODO: compile body*)
-     ILineComment("body")
-
-   ] @ (compile_aexpr body 0 initial_env (List.length args) false),
-   [
-   ILineComment("pop arguments and return?");
-   IMov(Reg(RSP), Reg(RBP));
-   IPop(Reg(RBP));
-   IRet;
-   ])
-
 
 and args_help args regs =
   match args, regs with
@@ -1428,59 +1449,66 @@ let add_native_lambdas (p : sourcespan program) =
   in
   match p with
   | Program(declss, body, tag) ->
-    Program((List.fold_left (fun declss (name, (_, arity)) -> (wrap_native name arity)::declss) declss native_fun_bindings), body, tag)
+      Program((List.fold_left (fun declss (name, (_, _, arity_opt)) -> match arity_opt with
+        | Some(arity) -> (wrap_native name arity)::declss 
+        | None -> raise (InternalCompilerError "Encountered undefined arity in initial runtime function definition"))
+      declss native_fun_bindings), body, tag)
 
 let compile_prog (anfed, (env : arg name_envt name_envt)) =
   let prelude =
     "section .text
-extern ?error
-extern ?input
-extern ?print
-extern ?print_stack
-extern ?equal
-extern ?try_gc
-extern ?naive_print_heap
-extern ?HEAP
-extern ?HEAP_END
-extern ?set_stack_bottom
-global ?our_code_starts_here" in
+extern error
+extern input
+extern print
+extern print_stack
+extern equal
+extern try_gc
+extern naive_print_heap
+extern HEAP
+extern HEAP_END
+extern set_stack_bottom
+global our_code_starts_here" in
   let suffix = sprintf "
-?err_comp_not_num:%s
-?err_arith_not_num:%s
-?err_logic_not_bool:%s
-?err_if_not_bool:%s
-?err_overflow:%s
-?err_get_not_tuple:%s
-?err_get_low_index:%s
-?err_get_high_index:%s
-?err_nil_deref:%s
-?err_out_of_memory:%s
-?err_set_not_tuple:%s
-?err_set_low_index:%s
-?err_set_high_index:%s
-?err_call_not_closure:%s
-?err_call_arity_err:%s
+err_comp_not_num:%s
+err_arith_not_num:%s
+err_logic_not_bool:%s
+err_if_not_bool:%s
+err_overflow:%s
+err_get_not_tuple:%s
+err_get_low_index:%s
+err_get_high_index:%s
+err_nil_deref:%s
+err_out_of_memory:%s
+err_set_not_tuple:%s
+err_set_low_index:%s
+err_set_high_index:%s
+err_call_not_closure:%s
+err_call_arity_err:%s
+err_get_not_num:%s
+err_set_not_num:%s
 "
-                       (to_asm (native_call (Label "?error") [Const(err_COMP_NOT_NUM); Reg(scratch_reg)]))
-                       (to_asm (native_call (Label "?error") [Const(err_ARITH_NOT_NUM); Reg(scratch_reg)]))
-                       (to_asm (native_call (Label "?error") [Const(err_LOGIC_NOT_BOOL); Reg(scratch_reg)]))
-                       (to_asm (native_call (Label "?error") [Const(err_IF_NOT_BOOL); Reg(scratch_reg)]))
-                       (to_asm (native_call (Label "?error") [Const(err_OVERFLOW); Reg(RAX)]))
-                       (to_asm (native_call (Label "?error") [Const(err_GET_NOT_TUPLE); Reg(scratch_reg)]))
-                       (to_asm (native_call (Label "?error") [Const(err_GET_LOW_INDEX); Reg(scratch_reg)]))
-                       (to_asm (native_call (Label "?error") [Const(err_GET_HIGH_INDEX); Reg(scratch_reg)]))
-                       (to_asm (native_call (Label "?error") [Const(err_NIL_DEREF); Reg(scratch_reg)]))
-                       (to_asm (native_call (Label "?error") [Const(err_OUT_OF_MEMORY); Reg(scratch_reg)]))
-                       (to_asm (native_call (Label "?error") [Const(err_SET_NOT_TUPLE); Reg(scratch_reg)]))
-                       (to_asm (native_call (Label "?error") [Const(err_SET_LOW_INDEX); Reg(scratch_reg)]))
-                       (to_asm (native_call (Label "?error") [Const(err_SET_HIGH_INDEX); Reg(scratch_reg)]))
-                       (to_asm (native_call (Label "?error") [Const(err_CALL_NOT_CLOSURE); Reg(scratch_reg)]))
-                       (to_asm (native_call (Label "?error") [Const(err_CALL_ARITY_ERR); Reg(scratch_reg)]))
+                       (to_asm (native_call (Label "error") [Const(err_COMP_NOT_NUM); Reg(scratch_reg)]))
+                       (to_asm (native_call (Label "error") [Const(err_ARITH_NOT_NUM); Reg(scratch_reg)]))
+                       (to_asm (native_call (Label "error") [Const(err_LOGIC_NOT_BOOL); Reg(scratch_reg)]))
+                       (to_asm (native_call (Label "error") [Const(err_IF_NOT_BOOL); Reg(scratch_reg)]))
+                       (to_asm (native_call (Label "error") [Const(err_OVERFLOW); Reg(RAX)]))
+                       (to_asm (native_call (Label "error") [Const(err_GET_NOT_TUPLE); Reg(scratch_reg)]))
+                       (to_asm (native_call (Label "error") [Const(err_GET_LOW_INDEX); Reg(scratch_reg)]))
+                       (to_asm (native_call (Label "error") [Const(err_GET_HIGH_INDEX); Reg(scratch_reg)]))
+                       (to_asm (native_call (Label "error") [Const(err_NIL_DEREF); Reg(scratch_reg)]))
+                       (to_asm (native_call (Label "error") [Const(err_OUT_OF_MEMORY); Reg(scratch_reg)]))
+                       (to_asm (native_call (Label "error") [Const(err_SET_NOT_TUPLE); Reg(scratch_reg)]))
+                       (to_asm (native_call (Label "error") [Const(err_SET_LOW_INDEX); Reg(scratch_reg)]))
+                       (to_asm (native_call (Label "error") [Const(err_SET_HIGH_INDEX); Reg(scratch_reg)]))
+                       (to_asm (native_call (Label "error") [Const(err_CALL_NOT_CLOSURE); Reg(scratch_reg)]))
+                       (to_asm (native_call (Label "error") [Const(err_CALL_ARITY_ERR); Reg(scratch_reg)]))
+                       (to_asm (native_call (Label "error") [Const(err_GET_NOT_NUM); Reg(scratch_reg)]))
+                       (to_asm (native_call (Label "error") [Const(err_SET_NOT_NUM); Reg(scratch_reg)]))
   in
   match anfed with
   | AProgram(body, _) ->
   (* $heap and $size are mock parameter names, just so that compile_fun knows our_code_starts_here takes in 2 parameters *)
-     let (prologue, comp_main, epilogue) = compile_fun "?our_code_starts_here" ["$heap"; "$size"] body env in
+     let (prologue, comp_main, epilogue) = compile_fun "our_code_starts_here" ["$heap"; "$size"] body env in
      let heap_start =
        [
          ILineComment("heap start");
@@ -1491,10 +1519,10 @@ global ?our_code_starts_here" in
        ] in
      let set_stack_bottom =
        [
-         ILabel("?our_code_starts_here");
+         ILabel("our_code_starts_here");
          IMov(Reg R12, Reg RDI);
        ]
-       @ (native_call (Label "?set_stack_bottom") [Reg(RBP)])
+       @ (native_call (Label "set_stack_bottom") [Reg(RBP)])
        @ [
            IMov(Reg RDI, Reg R12)
          ] in

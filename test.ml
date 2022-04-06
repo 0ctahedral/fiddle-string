@@ -23,15 +23,41 @@ let tparse name program expected = name>::fun _ ->
 let teq name actual expected = name>::fun _ ->
   assert_equal expected actual ~printer:(fun s -> s);;
 
-(* let tfvs name program expected = name>:: *)
-(*   (fun _ -> *)
-(*     let ast = parse_string name program in *)
-(*     let anfed = anf (tag ast) in *)
-(*     let vars = free_vars_P anfed [] in *)
-(*     let c = Stdlib.compare in *)
-(*     let str_list_print strs = "[" ^ (ExtString.String.join ", " strs) ^ "]" in *)
-(*     assert_equal (List.sort c vars) (List.sort c expected) ~printer:str_list_print) *)
-(* ;; *)
+(*let tfvs name program expected = name>::
+  (fun _ -> 
+    let ast = parse_string name program in 
+    let anfed = anf (tag ast) in 
+    let vars = free_vars_P anfed [] in 
+    let c = Stdlib.compare in 
+    let str_list_print strs = "[" ^ (ExtString.String.join ", " strs) ^ "]" in 
+    assert_equal (List.sort c vars) (List.sort c expected) ~printer:str_list_print) 
+;; *)
+
+let tfvs name program expected = name>::
+  (fun _ ->
+    let ast = parse_string name program in
+    let anfed = anf (tag ast) in
+    match anfed with
+    | AProgram(body, _) ->
+      let vars = free_vars body in
+      let c = Stdlib.compare in
+      let str_list_print strs = "[" ^ (ExtString.String.join ", " strs) ^ "]" in
+      assert_equal (List.sort c vars) (List.sort c expected) ~printer:str_list_print)
+;;
+
+let fv_tests = [
+  tfvs "num_bool" "5 == true" [];
+  tfvs "x" "x" ["x"];
+  tfvs "let_x" "let x = 5 in x" [];
+  tfvs "let_x_y" "let x = 5 in y" ["y"];
+  tfvs "fv_let2" "let x = y, z = h in x + z" ["y"; "h"];
+  tfvs "fv_lambda" "(lambda(x): x * y)" ["y";];
+  tfvs "fv_lambda_some_args" "(lambda(a, b): a + b)" [];
+  tfvs "fv_letrec" "let rec fact =
+        (lambda(n):
+          if n == x: 1 else: n * fact(n - 1)) in fact(3) + y
+" ["x"; "y"];
+];;
 
 let builtins_size = 4 (* arity + 0 vars + codeptr + padding *) * 1 (* TODO FIXME (List.length Compile.native_fun_bindings) *)
 
@@ -73,8 +99,29 @@ let program_tests = [
   t "eq4" "true == (3, 4)" "" "false";
   t "let" "let x = 5, y = 6 in let z = 10 in x * y + z" "" "40";
   t "tuples_let" "let t = (1, 2) in let (a, b) = t, m = 3 in a + (b * m)" "" "7";
+  t "closure_test" "
+    let p = 5,
+        q = 5,
+        f = (lambda (x): 
+                let g = p + q in
+                x * g) in f(1)" "" "10";
+  (*TODO: cannot return just the lambda for some reason??*)
+  t "curry_test" "
+let addx = (lambda (x): let g = (lambda (y): x + y) in g),
+    z = 5 
+in
+let f = addx(z)
+in
+f(6)
+  " "" "11";
   t "stack_alloc1" "let x = 5 in let y = 6 in let z = y in let f = (lambda: x + z) in let h = (lambda: z + y) in f()" "" "11";
   t "stack_alloc2" "let a = 1, b = 2, c = 3, d = 4, e = 5 in let f = (lambda: a + e) in f()" "" "6";
+  t "tuple_eq1" "equal((1,), ())" "" "false";
+  t "tuple_eq2" "equal((1, (2, 3), 4), (1, (2, 3), 4))" "" "true";
+  t "tuple_eq3" "equal((1, (2, (3, 4))), (1, (2, (3, 4))))" "" "true";
+  t "tuple_eq4" "equal((1, (2, 3)), (1, 2, 3))" "" "false";
+  t "tuple_eq" "equal((1, 2), (1, 2))" "" "true";
+  t "tuple_eq5" "equal((1, nil, 3), (1, nil, 3))" "" "true";
 ];;
 
 let type_tests = [ 
@@ -183,6 +230,7 @@ let program_suite = "program_tests">:::program_tests;;
 let type_suite = "type_tests">:::type_tests;;
 let pair_suite = "pair_tests">:::pair_tests;;
 let simple_suite = "pair_tests">:::simple_tests;;
+let fv_suite = "free_vars_tests">:::fv_tests;;
 
 let () =
   run_test_tt_main ("all_tests">:::[
@@ -190,5 +238,6 @@ let () =
     pair_suite;
     program_suite;
     type_suite;
+    fv_suite;
     input_file_test_suite ()])
 ;;

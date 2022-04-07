@@ -1,8 +1,7 @@
 let p = 5,
+    q = 5,
     f = (lambda (x): 
-            let g = (p + 1) in
-            (x + 1) * g),
-    l = 10
+            let g = p + q in
+            x * g)
 in
-let b = 1 in
-   f(b + l)
+ f(1)

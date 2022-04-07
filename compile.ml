@@ -60,9 +60,9 @@ let initial_val_env = [];;
 
 let prim_bindings = [];;
 let native_fun_bindings = [
-(*  ("print", (dummy_span, None, Some(1)));
+  ("print", (dummy_span, None, Some(1)));
   ("input", (dummy_span, None, Some(0)));
-  ("equal", (dummy_span, None, Some(2)));*)
+  ("equal", (dummy_span, None, Some(2)));
 ];;
 
 let initial_fun_env = prim_bindings @ native_fun_bindings;;
@@ -1272,6 +1272,7 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
     let closed_vars = free_vars (ACExpr(e)) in
     (* 3 words for arity, code ptr, and # of vars closed over, plus a word for each var *)
     let total_offset = 3 + (List.length closed_vars) in
+    let total_offset_padded = (total_offset + (total_offset mod 2)) in
     let (prologue, fnbody, epilogue) = compile_fun name binds body env in
     [
       ILineComment("begin lambda");
@@ -1302,9 +1303,10 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
     [
       ILabel(sprintf "%s_body" label);
     ] @ fnbody @ epilogue
-    @
+    @ 
     [
       ILabel(after_label);
+    ] @ (reserve total_offset_padded tag) @ [
       (* arity *)
       IMov(Reg(RAX), Const(Int64.of_int arity));
       IMov(RegOffset(0 * word_size, R15), Reg(RAX));
@@ -1312,6 +1314,7 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
       IMov(Reg(RAX), Label(label));
       IMov(RegOffset(1 * word_size, R15), Reg(RAX));
       (* number of closed over vars *)
+      ILineComment(sprintf "num closed vars (%d)" (List.length closed_vars));
       IMov(Reg(RAX), Const(Int64.of_int (List.length closed_vars)));
       IMov(RegOffset(2 * word_size, R15), Reg(RAX));
     ] @
@@ -1332,7 +1335,7 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
     @
     [
     (* increase the heap pointer and pad if needed *)
-      IAdd(Reg(R15), Const(Int64.of_int (word_size * (total_offset + (total_offset mod 2)))));
+      IAdd(Reg(R15), Const(Int64.of_int (word_size * total_offset_padded)));
       ILineComment("end of lambda");
     ]
 | CApp(lambda_id, args, call_type, _) ->

@@ -100,11 +100,13 @@ let program_tests = [
   t "let" "let x = 5, y = 6 in let z = 10 in x * y + z" "" "40";
   t "tuples_let" "let t = (1, 2) in let (a, b) = t, m = 3 in a + (b * m)" "" "7";
   t "closure_test" "
-    let p = 5,
-        q = 5,
+    let p = 7,
+        q = 3,
         f = (lambda (x): 
                 let g = p + q in
-                x * g) in f(1)" "" "10";
+                x * g) in
+    let t = (1, 20) in
+    f(f(1))" "" "100";
   (*TODO: cannot return just the lambda for some reason??*)
   t "curry_test" "
 let addx = (lambda (x): let g = (lambda (y): x + y) in g),
@@ -122,6 +124,10 @@ f(6)
   t "tuple_eq4" "equal((1, (2, 3)), (1, 2, 3))" "" "false";
   t "tuple_eq" "equal((1, 2), (1, 2))" "" "true";
   t "tuple_eq5" "equal((1, nil, 3), (1, nil, 3))" "" "true";
+
+  t "fact" "let rec fact =
+        (lambda(n):
+          if n == 0: 1 else: n * fact(n - 1)) in fact(3)" "" "6";
 ];;
 
 let type_tests = [ 
@@ -236,8 +242,8 @@ let () =
   run_test_tt_main ("all_tests">:::[
     simple_suite;
     pair_suite;
-    program_suite;
     type_suite;
     fv_suite;
+    program_suite;
     input_file_test_suite ()])
 ;;

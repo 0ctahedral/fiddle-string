@@ -66,6 +66,10 @@ uint64_t *copy_if_needed(uint64_t *garter_val_addr, uint64_t *heap_top) {
     // printf("\n");
     //  untag to get addr to heap thing
     heap_thing = (uint64_t *)(garter_val - TUPLE_TAG);
+    if ((*heap_thing & TUPLE_TAG_MASK) == FWD_PTR_TAG) {
+      *garter_val_addr = *heap_thing - FWD_PTR_TAG + TUPLE_TAG;
+      return heap_top;
+    }
     // read length of tuple, including length word itself
     len = *heap_thing + 1;
     // printf("Length is %ld\n", len);

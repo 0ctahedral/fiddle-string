@@ -67,13 +67,17 @@ uint64_t *copy_if_needed(uint64_t *garter_val_addr, uint64_t *heap_top) {
     //  untag to get addr to heap thing
     heap_thing = (uint64_t *)(garter_val - TUPLE_TAG);
     if ((*heap_thing & TUPLE_TAG_MASK) == FWD_PTR_TAG) {
+      // printf("Found forwarding pointer, updating\n");
       *garter_val_addr = *heap_thing - FWD_PTR_TAG + TUPLE_TAG;
       return heap_top;
     }
-    // read length of tuple, including length word itself
+    // printf("Copying tuple: ");
+    // printHelp(stdout, garter_val);
+    // printf("\n");
+    //  read length of tuple, including length word itself
     len = *heap_thing + 1;
     // printf("Length is %ld\n", len);
-    //  copy heap thing to to-space
+    //    copy heap thing to to-space
     for (int i = 0; i < len; i++) {
       heap_top[i] = heap_thing[i];
     }
@@ -109,6 +113,7 @@ uint64_t *gc(uint64_t *bottom_frame, uint64_t *top_frame, uint64_t *top_stack,
              uint64_t *from_start, uint64_t *from_end, uint64_t *to_start) {
 
   uint64_t *old_top_frame = top_frame;
+  uint64_t *old_to_start = to_start;
   do {
     for (uint64_t *cur_word = top_stack /* maybe need a +1 here? */;
          cur_word < top_frame; cur_word++) {
@@ -124,6 +129,16 @@ uint64_t *gc(uint64_t *bottom_frame, uint64_t *top_frame, uint64_t *top_stack,
     top_frame = (uint64_t *)(*top_frame);
   } while (old_top_frame < bottom_frame); // Use the old stack frame to decide
                                           // if there's more GC'ing to do
+
+  // printf("Copied stack, now copying heap\n");
+  //  iterate over to-space and copy referenced items into to-space
+  uint64_t *curr = old_to_start;
+  while (curr < to_start) {
+    // copy this word if needed
+    to_start = copy_if_needed(curr, to_start);
+    // move to next word
+    curr++;
+  }
 
   // after copying and GC'ing all the stack frames, return the new allocation
   // starting point

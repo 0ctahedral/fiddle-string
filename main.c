@@ -354,8 +354,10 @@ uint64_t *try_gc(uint64_t *alloc_ptr, uint64_t bytes_needed,
     exit(ERR_OUT_OF_MEMORY);
   }
 
+  // fprintf(stdout, "Running gc\n");
   new_r15 =
       gc(STACK_BOTTOM, cur_frame, cur_stack_top, FROM_S, HEAP_END, new_r15);
+  // fprintf(stdout, "Ran gc\n");
   HEAP = new_heap;
   HEAP_END = new_heap_end;
   free(old_heap);
@@ -383,14 +385,14 @@ uint64_t *try_gc(uint64_t *alloc_ptr, uint64_t bytes_needed,
       free(new_heap);
     exit(ERR_OUT_OF_MEMORY);
   } else {
-    fprintf(stderr, "new_r15 = %p\n", new_r15);
-    // naive_print_heap(HEAP, HEAP_END);
+    // fprintf(stderr, "new_r15 = %p\n", new_r15);
+    //  naive_print_heap(HEAP, HEAP_END);
     return new_r15;
   }
 }
 
 int main(int argc, char **argv) {
-  HEAP_SIZE = 100000;
+  HEAP_SIZE = 500;
   if (argc > 1) {
     HEAP_SIZE = atoi(argv[1]);
   }

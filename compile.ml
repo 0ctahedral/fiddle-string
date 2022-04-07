@@ -60,9 +60,9 @@ let initial_val_env = [];;
 
 let prim_bindings = [];;
 let native_fun_bindings = [
-  ("print", (dummy_span, None, Some(1)));
+(*  ("print", (dummy_span, None, Some(1)));
   ("input", (dummy_span, None, Some(0)));
-  ("equal", (dummy_span, None, Some(2)));
+  ("equal", (dummy_span, None, Some(2)));*)
 ];;
 
 let initial_fun_env = prim_bindings @ native_fun_bindings;;

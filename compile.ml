@@ -980,7 +980,7 @@ and compile_aexpr (e : tag aexpr) (si : int) (env : arg name_envt name_envt) (nu
                                             ] in
                                             let comp_lambda = (compile_cexpr lambda si env num_args is_tail bname) in
                                             let comp_body = (compile_aexpr body si env num_args is_tail name) in
-                                            store_closure_ptr @ comp_lambda @ comp_body
+                                            comp_lambda @ comp_body
     | ALetRec(_, _, _) -> raise (InternalCompilerError "Mutually recursive functions not implemented")
 and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (num_args : int) (is_tail : bool) (name: string): instruction list =
   match e with
@@ -1274,6 +1274,8 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
     let total_offset = 3 + (List.length closed_vars) in
     let total_offset_padded = (total_offset + (total_offset mod 2)) in
     let (prologue, fnbody, epilogue) = compile_fun name binds body env in
+    (reserve total_offset_padded tag) @ 
+    (* put address in RAX, mask it *)
     [
       ILineComment("begin lambda");
       IJmp(Label(after_label));
@@ -1306,7 +1308,7 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
     @ 
     [
       ILabel(after_label);
-    ] @ (reserve total_offset_padded tag) @ [
+    ] @ [
       (* arity *)
       IMov(Reg(RAX), Const(Int64.of_int (arity * 2)));
       IMov(RegOffset(0 * word_size, R15), Reg(RAX));
@@ -1322,11 +1324,7 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
       IMov(Reg(RAX), (find_var_in_envt env var ""));
       IMov(RegOffset(word_size * (i + 3), R15), Reg(RAX));
     ]) closed_vars))
-    @ [
-    (* put address in RAX, mask it *)
-      IMov(Reg(RAX), Reg(R15));
-      IAdd(Reg(RAX), Const(closure_tag));
-    ] @
+    @
     (* pad if needed *)
     (if (total_offset mod 2) = 0 then [] else [
       IMov(Reg(scratch_reg), Sized(QWORD_PTR, HexConst(0xEEEEL)));
@@ -1334,6 +1332,8 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
     ])
     @
     [
+      IMov(Reg(RAX), Reg(R15));
+      IAdd(Reg(RAX), Const(closure_tag));
     (* increase the heap pointer and pad if needed *)
       IAdd(Reg(R15), Const(Int64.of_int (word_size * total_offset_padded)));
       ILineComment("end of lambda");

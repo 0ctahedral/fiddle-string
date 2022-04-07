@@ -118,9 +118,9 @@ uint64_t *copy_if_needed(uint64_t *garter_val_addr, uint64_t *heap_top) {
     }
 
 
-    //printf("found a lambda at: %p", heap_addr);
-    //printHelp(stdout, garter_val);
-    //printf("\n");
+    printf("found a lambda at: %p", heap_addr);
+    printHelp(stdout, garter_val);
+    printf("\n");
 
     len = 3 + (heap_addr[2] / 2);
     for (int i = 0; i < len; i++) {
@@ -160,9 +160,9 @@ uint64_t *copy_if_needed(uint64_t *garter_val_addr, uint64_t *heap_top) {
  */
 uint64_t *gc(uint64_t *bottom_frame, uint64_t *top_frame, uint64_t *top_stack,
              uint64_t *from_start, uint64_t *from_end, uint64_t *to_start) {
-  //printf("Running garbage collection, to start is: %p\n", to_start);
-  //smarter_print_heap(from_start, from_end, to_start, to_start);
-  //printf("\n");
+  printf("Running garbage collection, to start is: %p\n", to_start);
+  smarter_print_heap(from_start, from_end, to_start, to_start);
+  printf("\n");
 
   uint64_t *old_top_frame = top_frame;
   uint64_t *old_to_start = to_start;
@@ -194,9 +194,9 @@ uint64_t *gc(uint64_t *bottom_frame, uint64_t *top_frame, uint64_t *top_stack,
     curr++;
   }
 
-  //printf("Completed garbage collection\n");
-  //smarter_print_heap(from_start, from_end, old_to_start, to_start);
-  //printf("\n");
+  printf("Completed garbage collection\n");
+  smarter_print_heap(from_start, from_end, old_to_start, to_start);
+  printf("\n");
 
   // after copying and GC'ing all the stack frames, return the new allocation
   // starting point

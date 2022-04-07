@@ -149,11 +149,11 @@ void printHelp(FILE *out, SNAKEVAL val) {
     uint64_t len = addr[0];
     /* fprintf(out, "Heap is:\n"); */
     /* naive_print_heap(HEAP, HEAP_END); */
-    /* fprintf(out, "%p-->(len=%d)", (int*)(val - 1), len / 2); */
+    // fprintf(out, "%p-->(len=%d)", (int*)(val - 1), len / 2); 
     /* fflush(out); */
     *(addr) = 0x8000000000000000 | (++tupleCounter);
     fprintf(out, "(");
-    for (uint64_t i = 1; i <= len; i++) {
+    for (uint64_t i = 1; i <= len / 2; i++) {
       if (i > 1)
         fprintf(out, ", ");
       printHelp(out, addr[i]);
@@ -266,10 +266,12 @@ void error(uint64_t code, SNAKEVAL val) {
     printHelp(stderr, val);
     break;
   case ERR_GET_LOW_INDEX:
-    fprintf(stderr, "Error: index too small to get, got %ld\n", (uint64_t)val);
+    fprintf(stderr, "Error: index too small to get, got ");
+    printHelp(stderr, val);
     break;
   case ERR_GET_HIGH_INDEX:
-    fprintf(stderr, "Error: index too large to get, got %ld\n", (uint64_t)val);
+    fprintf(stderr, "Error: index too large to get, got ");
+    printHelp(stderr, val);
     break;
   case ERR_GET_NOT_NUM:
     fprintf(stderr, "Error: get expected numeric index, got ");

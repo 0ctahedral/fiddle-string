@@ -1175,7 +1175,7 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
             ] @ (reserve total_offset tag) @
             [
               (* put length of tuple in heap*)
-              IMov(Reg(RAX), Const(Int64.of_int (total_offset - 1)));
+              IMov(Reg(RAX), Const(Int64.of_int ((total_offset - 1) * 2)));
               IMov(RegOffset(0 * word_size, R15), Reg(RAX))
             ] @ List.flatten set_tuple @
             [
@@ -1210,15 +1210,15 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
           ICmp(Reg(RAX), Const(0L));
           IJle(Label("?err_nil_deref"));
           
-          (* put index into r11 and divide by 2 to get machine number *)
+          (* put index into r11 *)
           IMov(Reg(R11), imm_idx);
           ICmp(Reg(R11), Const(0L));
-          ISar(Reg(R11), Const(1L));
           IJl(Label("?err_get_low_index"));
 
           ICmp(Reg(R11), RegOffset(0 * word_size, RAX));
           IJge(Label("?err_get_high_index"));
 
+          ISar(Reg(R11), Const(1L));
           IAdd(Reg(R11), Const(1L));
           (* get value*)
           IMov(Reg(RAX), RegOffsetReg(RAX, R11, word_size, 0));
@@ -1248,14 +1248,14 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
           ISub(Reg(RAX), Const(1L));
           ICmp(Reg(RAX), Const(0L));
           IJle(Label("?err_nil_deref"));
-          (* put index into r11 and divide by 2 to get machine number *)
+          (* put index into r11 *)
           IMov(Reg(R11), imm_idx);
-          ISar(Reg(R11), Const(1L));
           ICmp(Reg(R11), Const(0L));
           IJl(Label("?err_set_low_index"));
           ICmp(Reg(R11), RegOffset(0 * word_size, RAX));
           IJge(Label("?err_set_high_index"));
 
+          ISar(Reg(R11), Const(1L));
           IAdd(Reg(R11), Const(1L));
 
           IMov(Reg(RDI), imm_newval);

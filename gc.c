@@ -86,7 +86,7 @@ uint64_t *copy_if_needed(uint64_t *garter_val_addr, uint64_t *heap_top) {
     // printHelp(stdout, garter_val);
     // printf("\n");
     //  read length of tuple, including length word itself
-    len = *heap_addr + 1;
+    len = (*heap_addr / 2) + 1;
     // printf("Length is %ld\n", len);
     //    copy heap thing to to-space
     for (int i = 0; i < len; i++) {

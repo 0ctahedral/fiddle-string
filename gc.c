@@ -28,11 +28,22 @@ void naive_print_heap(uint64_t *heap, uint64_t *heap_end) {
 }
 
 // Implement the functions below
+void smarter_print_space(uint64_t *start, uint64_t *end) {
+  uint64_t *curr = start;
+  while (curr < end) {
+    printf("%p: ", curr);
+    printHelp(stdout, *curr);
+    printf("\n");
+    curr++;
+  }
+}
 
 void smarter_print_heap(uint64_t *from_start, uint64_t *from_end,
                         uint64_t *to_start, uint64_t *to_end) {
-  // Print out the entire heap (both semispaces), and
-  // try to print values readably when possible
+  printf("From space:\n");
+  smarter_print_space(from_start, from_end);
+  printf("To space:\n");
+  smarter_print_space(to_start, to_end);
 }
 
 /*
@@ -111,6 +122,9 @@ uint64_t *copy_if_needed(uint64_t *garter_val_addr, uint64_t *heap_top) {
  */
 uint64_t *gc(uint64_t *bottom_frame, uint64_t *top_frame, uint64_t *top_stack,
              uint64_t *from_start, uint64_t *from_end, uint64_t *to_start) {
+  printf("Running garbage collection\n");
+  smarter_print_heap(from_start, from_end, to_start, to_start);
+  printf("\n");
 
   uint64_t *old_top_frame = top_frame;
   uint64_t *old_to_start = to_start;
@@ -139,6 +153,10 @@ uint64_t *gc(uint64_t *bottom_frame, uint64_t *top_frame, uint64_t *top_stack,
     // move to next word
     curr++;
   }
+
+  printf("Completed garbage collection\n");
+  smarter_print_heap(from_start, from_end, old_to_start, to_start);
+  printf("\n");
 
   // after copying and GC'ing all the stack frames, return the new allocation
   // starting point

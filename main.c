@@ -105,6 +105,11 @@ void printHelp(FILE *out, SNAKEVAL val) {
     fprintf(out, "false");
   } else if ((val & CLOSURE_TAG_MASK) == CLOSURE_TAG) {
     uint64_t *addr = (uint64_t *)(val - CLOSURE_TAG);
+    // check if this points to a forwarding pointer
+    if ((*addr & CLOSURE_TAG_MASK) == FWD_PTR_TAG) {
+      printf("Forwarding to ");
+      printHelp(out, *addr - FWD_PTR_TAG + CLOSURE_TAG);
+    }
     fprintf(out, "[%p - 5] ==> <function arity %ld, closed %ld, fn-ptr %p>",
             (uint64_t *)val, addr[0], addr[1], (uint64_t *)addr[2]);
     /* fprintf(out, "\nClosed-over values:\n"); */
@@ -126,6 +131,10 @@ void printHelp(FILE *out, SNAKEVAL val) {
   /* } */
   else if ((val & TUPLE_TAG_MASK) == TUPLE_TAG) {
     uint64_t *addr = (uint64_t *)(val - TUPLE_TAG);
+    if ((*addr & TUPLE_TAG_MASK) == FWD_PTR_TAG) {
+      printf("Forwarding to ");
+      printHelp(out, *addr - FWD_PTR_TAG + TUPLE_TAG);
+    }
     // Check whether we've visited this tuple already
     if ((*addr & 0x8000000000000000) != 0) {
       fprintf(out, "<cyclic tuple %d>", (int)(*addr & 0x7FFFFFFFFFFFFFFF));

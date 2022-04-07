@@ -111,9 +111,9 @@ void printHelp(FILE *out, SNAKEVAL val) {
       printHelp(out, *addr - FWD_PTR_TAG + CLOSURE_TAG);
     }
     fprintf(out, "[%p - 5] ==> <function arity %ld, closed %ld, fn-ptr %p>",
-            (uint64_t *)val, addr[0], addr[2], (uint64_t *)addr[1]);
+            (uint64_t *)val, addr[0], addr[2] / 2, (uint64_t *)addr[1]);
     fprintf(out, "\nClosed-over values:\n");
-    for (uint64_t i = 0; i < addr[2]; i++) {
+    for (uint64_t i = 0; i < addr[2] / 2; i++) {
       if (i > 0) { fprintf(out, "\n"); }
       if ((addr[3 + i] & TUPLE_TAG_MASK) == 5) {
         fprintf(out, "<closure %p>", (uint64_t*)addr[3 + i]);
@@ -403,7 +403,8 @@ uint64_t *try_gc(uint64_t *alloc_ptr, uint64_t bytes_needed,
 }
 
 int main(int argc, char **argv) {
-  HEAP_SIZE = 500;
+  //HEAP_SIZE = 500;
+  HEAP_SIZE = 40;
   if (argc > 1) {
     HEAP_SIZE = atoi(argv[1]);
   }

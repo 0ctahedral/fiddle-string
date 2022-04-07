@@ -106,7 +106,7 @@ let program_tests = [
                 let g = p + q in
                 x * g) in
     let t = (1, 20) in
-    f(f(1))" "" "100";
+f(f((0, 1)[1]))" "" "100";
   (*TODO: cannot return just the lambda for some reason??*)
   t "curry_test" "
 let addx = (lambda (x): let g = (lambda (y): x + y) in g),

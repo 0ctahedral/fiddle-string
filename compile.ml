@@ -1308,14 +1308,14 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
       ILabel(after_label);
     ] @ (reserve total_offset_padded tag) @ [
       (* arity *)
-      IMov(Reg(RAX), Const(Int64.of_int arity));
+      IMov(Reg(RAX), Const(Int64.of_int (arity * 2)));
       IMov(RegOffset(0 * word_size, R15), Reg(RAX));
       (* code ptr *)
       IMov(Reg(RAX), Label(label));
       IMov(RegOffset(1 * word_size, R15), Reg(RAX));
       (* number of closed over vars *)
       ILineComment(sprintf "num closed vars (%d)" (List.length closed_vars));
-      IMov(Reg(RAX), Const(Int64.of_int (List.length closed_vars)));
+      IMov(Reg(RAX), Const(Int64.of_int (2 * (List.length closed_vars))));
       IMov(RegOffset(2 * word_size, R15), Reg(RAX));
     ] @
     (List.flatten (List.mapi (fun i var -> [
@@ -1380,7 +1380,7 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
         IPush(Reg(RAX));
         ISub(Reg(RAX), Const(closure_tag));
         IMov(Reg(R11), RegOffset(word_size * 0, RAX));
-        ICmp(Reg(R11), Const(Int64.of_int (List.length args)));
+        ICmp(Reg(R11), Const(Int64.of_int (2 * (List.length args))));
         IJne(Label("?err_call_arity_err"));
         (* Untag and call code pointer, which is second word in lambda *)
         ICall(RegOffset(word_size * 1, RAX));

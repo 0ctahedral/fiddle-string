@@ -915,7 +915,6 @@ let rec replicate x i =
   else x :: (replicate x (i - 1))
 
 and reserve size tag =
-  []
   (* For testing, perform gc on each allocation *)
   (*
   let ok = sprintf "$memcheck_%d" tag in
@@ -926,7 +925,8 @@ and reserve size tag =
     ICmp(Reg(RAX), Reg(heap_reg));
     IJge(Label ok);
   ]
-  @ (native_call (Label "?try_gc") [
+  @*)
+  (native_call (Label "?try_gc") [
          (Sized(QWORD_PTR, Reg(heap_reg))); (* alloc_ptr in C *)
          (Sized(QWORD_PTR, Const(Int64.of_int size))); (* bytes_needed in C *)
          (Sized(QWORD_PTR, Reg(RBP))); (* first_frame in C *)
@@ -936,7 +936,6 @@ and reserve size tag =
       IInstrComment(IMov(Reg(heap_reg), Reg(RAX)), "assume gc success if returning here, so RAX holds the new heap_reg value");
       (*ILabel(ok);*)
     ]
-*)
 (* IMPLEMENT THIS FROM YOUR PREVIOUS ASSIGNMENT *)
 (* Additionally, you are provided an initial environment of values that you may want to
    assume should take up the first few stack slots.  See the compiliation of Programs

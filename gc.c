@@ -78,7 +78,7 @@ uint64_t *copy_if_needed(uint64_t *garter_val_addr, uint64_t *heap_top) {
     //  untag to get addr to heap thing
     heap_addr = (uint64_t *)(garter_val - TUPLE_TAG);
     if ((*heap_addr & TUPLE_TAG_MASK) == FWD_PTR_TAG) {
-      //printf("Found forwarding pointer, updating\n");
+      // printf("Found forwarding pointer, updating\n");
       *garter_val_addr = *heap_addr - FWD_PTR_TAG + TUPLE_TAG;
       return heap_top;
     }
@@ -100,13 +100,13 @@ uint64_t *copy_if_needed(uint64_t *garter_val_addr, uint64_t *heap_top) {
     // move heap_top pointer, pad if len is even (len plus tuple elements will
     // be odd)
     // printf("Adding %ld to heap top\n", (len + (len % 2)) * sizeof(uint64_t));
-    //heap_top += (len + (len % 2)) * sizeof(uint64_t);
+    // heap_top += (len + (len % 2)) * sizeof(uint64_t);
     heap_top += len;
     if (len % 2 == 0) {
       heap_top[0] = 0xEEEEE;
       heap_top += 1;
     }
-    //printf("Returning new top: %p\n", heap_top);
+    // printf("Returning new top: %p\n", heap_top);
   }
   if ((garter_val & CLOSURE_TAG_MASK) == CLOSURE_TAG) {
     heap_addr = (uint64_t *)(garter_val - CLOSURE_TAG);
@@ -117,18 +117,17 @@ uint64_t *copy_if_needed(uint64_t *garter_val_addr, uint64_t *heap_top) {
       return heap_top;
     }
 
-
-    printf("found a lambda at: %p", heap_addr);
-    printHelp(stdout, garter_val);
-    printf("\n");
+    // printf("found a lambda at: %p", heap_addr);
+    // printHelp(stdout, garter_val);
+    // printf("\n");
 
     len = 3 + (heap_addr[2] / 2);
     for (int i = 0; i < len; i++) {
       heap_top[i] = heap_addr[i];
     }
-    //printf("new closure");
-    //printHelp(stdout, garter_val);
-    //printf("\n");
+    // printf("new closure");
+    // printHelp(stdout, garter_val);
+    // printf("\n");
 
     *heap_addr = (uint64_t)heap_top | FWD_PTR_TAG;
     // change original pointer to heap thing to point to new to-space location
@@ -140,7 +139,7 @@ uint64_t *copy_if_needed(uint64_t *garter_val_addr, uint64_t *heap_top) {
       heap_top[0] = 0xEEEEE;
       heap_top += 1;
     }
-    //printf("Returning new top: %p\n", heap_top);
+    // printf("Returning new top: %p\n", heap_top);
   }
   return heap_top;
 }
@@ -160,9 +159,9 @@ uint64_t *copy_if_needed(uint64_t *garter_val_addr, uint64_t *heap_top) {
  */
 uint64_t *gc(uint64_t *bottom_frame, uint64_t *top_frame, uint64_t *top_stack,
              uint64_t *from_start, uint64_t *from_end, uint64_t *to_start) {
-  printf("Running garbage collection, to start is: %p\n", to_start);
-  smarter_print_heap(from_start, from_end, to_start, to_start);
-  printf("\n");
+  // printf("Running garbage collection, to start is: %p\n", to_start);
+  // smarter_print_heap(from_start, from_end, to_start, to_start);
+  // printf("\n");
 
   uint64_t *old_top_frame = top_frame;
   uint64_t *old_to_start = to_start;
@@ -182,7 +181,7 @@ uint64_t *gc(uint64_t *bottom_frame, uint64_t *top_frame, uint64_t *top_stack,
   } while (old_top_frame < bottom_frame); // Use the old stack frame to decide
                                           // if there's more GC'ing to do
 
-  //printf("finished looking through stack, to start is: %p\n", to_start);
+  // printf("finished looking through stack, to start is: %p\n", to_start);
 
   // printf("Copied stack, now copying heap\n");
   //  iterate over to-space and copy referenced items into to-space
@@ -194,9 +193,9 @@ uint64_t *gc(uint64_t *bottom_frame, uint64_t *top_frame, uint64_t *top_stack,
     curr++;
   }
 
-  printf("Completed garbage collection\n");
-  smarter_print_heap(from_start, from_end, old_to_start, to_start);
-  printf("\n");
+  // printf("Completed garbage collection\n");
+  // smarter_print_heap(from_start, from_end, old_to_start, to_start);
+  // printf("\n");
 
   // after copying and GC'ing all the stack frames, return the new allocation
   // starting point

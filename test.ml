@@ -247,6 +247,19 @@ let gc = [
       ""
       "((7, 6, 5, 4, 3, 2, 1), 5)";
 
+ tgc "gc_lambda" (7 + builtins_size)
+ "let b = 5 in
+  let rec f = (lambda (x): (1 + b, x)) in
+    begin
+      f(1);
+      f(2);
+      f(3);
+      f(4)
+    end
+  "
+ ""
+ "(6, 4)";
+
   ]
 
 let input = [
@@ -263,14 +276,12 @@ let gc_suite = "gc_tests">:::gc;;
 
 let () =
   run_test_tt_main ("all_tests">:::[
-    (*
     simple_suite;
     pair_suite;
     type_suite;
     fv_suite;
     program_suite;
     oom_suite;
-    *)
     gc_suite;
     input_file_test_suite ()])
 ;;

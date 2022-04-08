@@ -1171,9 +1171,10 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
             let total_offset, set_tuple = List.fold_left_map
             (fun offset e -> (offset + 1, [IMov(Reg(RAX), (compile_imm e env name)); IMov(RegOffset(offset * word_size, R15), Reg(RAX))]))
             1 exps in
+            let total_offset_padded = (total_offset + (total_offset mod 2)) in
             [
               ILineComment("tuple starts here");
-            ] @ (reserve (total_offset * word_size) tag) @
+            ] @ (reserve (total_offset_padded * word_size) tag) @
             [
               (* put length of tuple in heap*)
               IMov(Reg(RAX), Const(Int64.of_int ((total_offset - 1) * 2)));
@@ -1183,7 +1184,7 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
             (* put address in RAX, mask it *)
               IMov(Reg(RAX), Reg(R15));
               IAdd(Reg(RAX), Const(1L));
-              IAdd(Reg(R15), Const(Int64.of_int (word_size * (total_offset + (total_offset mod 2)))));
+              IAdd(Reg(R15), Const(Int64.of_int (word_size * total_offset_padded)));
             (* increase the heap pointer and pad if needed *)
               ILineComment("tuple ends here");
             ]

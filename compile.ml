@@ -935,12 +935,17 @@ and reserve size tag =
    let env = find_env initial_env name in
    let stack_size = List.length env in
    let arity = (List.length args) in
+   let push_list = ref [ILineComment("pushing dummy vals")] in
+   for i = 1 to (stack_size + (stack_size mod 2)) do
+     push_list := !push_list @ [IMov(Reg(scratch_reg), HexConst(0xEEEEL));
+                               IMov(RegOffset(~-word_size * i, RBP), Reg(scratch_reg))]
+   done;
    [
    ILineComment("prologue");
    IPush(Reg(RBP));
    IMov(Reg(RBP), Reg(RSP));
    IAdd(Reg(RSP), Const(Int64.of_int (~-word_size * (stack_size + (stack_size mod 2)))));
-   ],
+   ] @ !push_list,
    [ ILineComment("body") ] @ (compile_aexpr body 0 initial_env arity false name),
    [
    ILineComment("pop arguments and return?");

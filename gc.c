@@ -159,9 +159,9 @@ uint64_t *copy_if_needed(uint64_t *garter_val_addr, uint64_t *heap_top) {
  */
 uint64_t *gc(uint64_t *bottom_frame, uint64_t *top_frame, uint64_t *top_stack,
              uint64_t *from_start, uint64_t *from_end, uint64_t *to_start) {
-  //printf("Running garbage collection, to start is: %p\n", to_start);
-  //smarter_print_heap(from_start, from_end, to_start, to_start);
-  //printf("\n");
+  // printf("Running garbage collection, to start is: %p\n", to_start);
+  // smarter_print_heap(from_start, from_end, to_start, to_start);
+  // printf("\n");
 
   uint64_t *old_top_frame = top_frame;
   uint64_t *old_to_start = to_start;
@@ -183,7 +183,7 @@ uint64_t *gc(uint64_t *bottom_frame, uint64_t *top_frame, uint64_t *top_stack,
 
   //printf("finished looking through stack, to start is: %p\n", to_start);
 
-  // printf("Copied stack, now copying heap\n");
+  //printf("Copied stack, now copying heap\n");
   //  iterate over to-space and copy referenced items into to-space
   uint64_t *curr = old_to_start;
   while (curr < to_start) {

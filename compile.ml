@@ -277,7 +277,7 @@ let is_well_formed (p : sourcespan program) : (sourcespan program) fallible =
             (match dupe x rest with
              | None -> []
              | Some where -> [DuplicateId(x, where, loc)]) @ process_args rest
-         | BTuple(binds, loc)::rest ->
+         | BTuple(binds, _loc)::rest ->
             process_args (binds @ rest)
        in
        let rec flatten_bind (bind : sourcespan bind) : (string * scope_info) list =
@@ -286,7 +286,7 @@ let is_well_formed (p : sourcespan program) : (sourcespan program) fallible =
          | BName(x, _, xloc) -> [(x, (xloc, None, None))]
          | BTuple(args, _) -> List.concat (List.map flatten_bind args) in
        (process_args binds) @ wf_E body (merge_envs (List.concat (List.map flatten_bind binds)) env)
-  and wf_D d (env : scope_info name_envt) (tyenv : StringSet.t) =
+  and wf_D d (env : scope_info name_envt) (_tyenv : StringSet.t) =
     match d with
     | DFun(_, args, body, _) ->
        let rec dupe x args =
@@ -303,7 +303,7 @@ let is_well_formed (p : sourcespan program) : (sourcespan program) fallible =
             (match dupe x rest with
              | None -> []
              | Some where -> [DuplicateId(x, where, loc)]) @ process_args rest
-         | BTuple(binds, loc)::rest ->
+         | BTuple(binds, _loc)::rest ->
             process_args (binds @ rest)
        in
        let rec arg_env args (env : scope_info name_envt) =
@@ -695,7 +695,7 @@ let anf (p : tag program) : unit aprogram =
        let (exp_ans, exp_setup) = helpC exp in
        let (body_ans, body_setup) = helpI (ELet(rest, body, pos)) in
        (body_ans, exp_setup @ [BLet (bind, exp_ans)] @ body_setup)
-    | ELet((BTuple(binds, _), exp, _)::rest, body, pos) ->
+    | ELet((BTuple(_binds, _), _exp, _)::_rest, _body, _pos) ->
        raise (InternalCompilerError("Tuple bindings should have been desugared away"))
   and helpA e : unit aexpr = 
     let (ans, ans_setup) = helpC e in
@@ -784,7 +784,6 @@ let:
     going down one on the list is your parent scope
     search goes down in the list, recursively checking the parent scope
    *)
-  (* TODO: are the stack numbers correct? *)
   let rec helpA (expr : tag aexpr) (env: arg name_envt name_envt) (si : int) : arg name_envt name_envt =
     match expr with
       | ASeq(bind, body, _) ->
@@ -800,7 +799,6 @@ let:
       | ALetRec(binds, body, _) -> 
           (* adds the binds to the body environment and then creates the env for each lambda *)
           let ((body_env, new_si), binds_env) = List.fold_left_map (fun (init_env, csi) (name, exp) ->
-            (* TODO: does this make sense? for each fun we increase the si for its local variables *)
             let pre_fun_env = (add_to_first_envt init_env (name, RegOffset(~-csi * word_size, RBP))) in
             ((pre_fun_env, csi + 1), (helpL exp pre_fun_env csi)))
           (env, si) binds in
@@ -816,7 +814,7 @@ let:
               els_envt
       | CLambda(_, _, _) -> env @ (helpL cexpr env si)
       | _ -> env
-  and helpL (cexpr : tag cexpr) (env: arg name_envt name_envt) (si : int) : arg name_envt name_envt =
+  and helpL (cexpr : tag cexpr) (_env: arg name_envt name_envt) (_si : int) : arg name_envt name_envt =
     match cexpr with
       | CLambda(args, body, ltag) -> 
           (* INVARIANT: the variable a closure is stored in must be added to its parent envt
@@ -828,7 +826,6 @@ let:
           let _, args_env = List.fold_left (fun (new_si, args_env) name ->
             (new_si + 1, (name, RegOffset(new_si * word_size, RBP))::args_env)) (3, []) args in
           let fv = (free_vars (ACExpr cexpr)) in
-          (* TODO: is the tuple offset corrct? *)
           let new_si, fv_env = List.fold_left (fun (new_si, fv_env) x ->
             (new_si + 1, (x, RegOffset(~-new_si * word_size, RBP)) :: fv_env)
           ) (1, []) fv  in
@@ -840,10 +837,6 @@ let:
     match env with
     | (name, env)::rest -> (name, var :: env) :: rest
     | [] -> raise (InternalCompilerError "cannot add to first env of empty envt")
-  and get_last_var (env : arg name_envt name_envt) : string =
-    match env with
-    | (_, (name, _)::_)::_ -> name
-    | _ -> raise (InternalCompilerError "could not find a last var")
   in
   match prog with
     | AProgram(body, _) -> 
@@ -916,16 +909,14 @@ let rec replicate x i =
 
 and reserve size tag =
   (* For testing, perform gc on each allocation *)
-  (*
   let ok = sprintf "$memcheck_%d" tag in
   [
-    IInstrComment(IMov(Reg(RAX), LabelContents("HEAP_END")),
+    IInstrComment(IMov(Reg(RAX), LabelContents("?HEAP_END")),
                  sprintf "Reserving %d words" (size / word_size));
     ISub(Reg(RAX), Const(Int64.of_int size));
     ICmp(Reg(RAX), Reg(heap_reg));
     IJge(Label ok);
-  ]
-  @*)
+  ] @
   (native_call (Label "?try_gc") [
          (Sized(QWORD_PTR, Reg(heap_reg))); (* alloc_ptr in C *)
          (Sized(QWORD_PTR, Const(Int64.of_int size))); (* bytes_needed in C *)
@@ -934,7 +925,7 @@ and reserve size tag =
     ])
   @ [
       IInstrComment(IMov(Reg(heap_reg), Reg(RAX)), "assume gc success if returning here, so RAX holds the new heap_reg value");
-      (*ILabel(ok);*)
+      ILabel(ok);
     ]
 (* IMPLEMENT THIS FROM YOUR PREVIOUS ASSIGNMENT *)
 (* Additionally, you are provided an initial environment of values that you may want to

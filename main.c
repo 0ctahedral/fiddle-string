@@ -114,9 +114,11 @@ void printHelp(FILE *out, SNAKEVAL val) {
             (uint64_t *)val, addr[0], addr[2] / 2, (uint64_t *)addr[1]);
     fprintf(out, "\nClosed-over values:\n");
     for (uint64_t i = 0; i < addr[2] / 2; i++) {
-      if (i > 0) { fprintf(out, "\n"); }
+      if (i > 0) {
+        fprintf(out, "\n");
+      }
       if ((addr[3 + i] & TUPLE_TAG_MASK) == 5) {
-        fprintf(out, "<closure %p>", (uint64_t*)addr[3 + i]);
+        fprintf(out, "<closure %p>", (uint64_t *)addr[3 + i]);
       } else {
         printHelp(out, addr[3 + i]);
       }
@@ -149,7 +151,7 @@ void printHelp(FILE *out, SNAKEVAL val) {
     uint64_t len = addr[0];
     /* fprintf(out, "Heap is:\n"); */
     /* naive_print_heap(HEAP, HEAP_END); */
-    // fprintf(out, "%p-->(len=%d)", (int*)(val - 1), len / 2); 
+    // fprintf(out, "%p-->(len=%d)", (int*)(val - 1), len / 2);
     /* fflush(out); */
     *(addr) = 0x8000000000000000 | (++tupleCounter);
     fprintf(out, "(");
@@ -403,10 +405,11 @@ uint64_t *try_gc(uint64_t *alloc_ptr, uint64_t bytes_needed,
 }
 
 int main(int argc, char **argv) {
-  //HEAP_SIZE = 500;
+  // HEAP_SIZE = 500;
   HEAP_SIZE = 40;
   if (argc > 1) {
     HEAP_SIZE = atoi(argv[1]);
+    // printf("Set heap size to %d\n", HEAP_SIZE);
   }
   if (HEAP_SIZE < 0 || HEAP_SIZE > 1000000) {
     HEAP_SIZE = 0;

@@ -127,7 +127,22 @@ f(6)
   t "fact" "let rec fact =
         (lambda(n):
           if n == 0: 1 else: n * fact(n - 1)) in fact(3)" "" "6";
-];;
+  t "mutate_closed" "
+  let t = (1, 2, 3),
+  f = (lambda (n, x): t[n] := x) in
+  begin
+    f(0, 3);
+    f(1, (4, 5));
+    f(2, nil);
+    t
+  end
+  " "" "(3, (4, 5), nil)";
+
+  t "tambda" "
+    let t = ((lambda: 10), (lambda (y): y)) in
+    (t[0](), t[1](1))
+  " "" "(10, 1)";
+];; 
 
 let type_tests = [ 
   t "isbool_true" "isbool(true)" "" "true";

@@ -109,7 +109,7 @@ let program_tests = [
 f(f((0, 1)[1]))" "" "100";
   (*TODO: cannot return just the lambda for some reason??*)
   t "curry_test" "
-let addx = (lambda (x): let g = (lambda (y): x + y) in g),
+let addx = (lambda (x): (lambda (y): x + y)),
     z = 5 
 in
 let f = addx(z)

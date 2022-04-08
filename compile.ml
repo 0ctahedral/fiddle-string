@@ -818,12 +818,13 @@ let:
       | _ -> env
   and helpL (cexpr : tag cexpr) (env: arg name_envt name_envt) (si : int) : arg name_envt name_envt =
     match cexpr with
-      | CLambda(args, body, _) -> 
+      | CLambda(args, body, ltag) -> 
           (* INVARIANT: the variable a closure is stored in must be added to its parent envt
              before we create it.
              This allows us to look for the most recent variable declaration and use that name for
              this new environment *)
-          let env_name = get_last_var env in
+          (*let env_name = get_last_var env in*)
+          let env_name = sprintf "closure_%d" ltag in
           let new_si, args_env = List.fold_left (fun (new_si, args_env) name ->
             (* NEW STRAT: put all variables on the stack and it is the job of the setup to get them out *)
             (new_si + 1, (name, RegOffset(~-new_si * word_size, RBP))::args_env)) (1, []) args in
@@ -915,6 +916,7 @@ let rec replicate x i =
   else x :: (replicate x (i - 1))
 
 and reserve size tag =
+  []
   (* For testing, perform gc on each allocation *)
   (*
   let ok = sprintf "$memcheck_%d" tag in
@@ -925,7 +927,7 @@ and reserve size tag =
     ICmp(Reg(RAX), Reg(heap_reg));
     IJge(Label ok);
   ]
-  @*) (native_call (Label "?try_gc") [
+  @ (native_call (Label "?try_gc") [
          (Sized(QWORD_PTR, Reg(heap_reg))); (* alloc_ptr in C *)
          (Sized(QWORD_PTR, Const(Int64.of_int size))); (* bytes_needed in C *)
          (Sized(QWORD_PTR, Reg(RBP))); (* first_frame in C *)
@@ -935,7 +937,7 @@ and reserve size tag =
       IInstrComment(IMov(Reg(heap_reg), Reg(RAX)), "assume gc success if returning here, so RAX holds the new heap_reg value");
       (*ILabel(ok);*)
     ]
-
+*)
 (* IMPLEMENT THIS FROM YOUR PREVIOUS ASSIGNMENT *)
 (* Additionally, you are provided an initial environment of values that you may want to
    assume should take up the first few stack slots.  See the compiliation of Programs
@@ -1268,12 +1270,13 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
     let label = sprintf "%s_closure_%d" name tag in
     let after_label = sprintf "%s_after_%d" name tag in
     let arity = List.length binds in
-    let exec_env = [(name, find_env env name)]  in
+    let env_name = sprintf "closure_%d" tag in
+    let exec_env = [(name, find_env env env_name)]  in
     let closed_vars = free_vars (ACExpr(e)) in
     (* 3 words for arity, code ptr, and # of vars closed over, plus a word for each var *)
     let total_offset = 3 + (List.length closed_vars) in
     let total_offset_padded = (total_offset + (total_offset mod 2)) in
-    let (prologue, fnbody, epilogue) = compile_fun name binds body env in
+    let (prologue, fnbody, epilogue) = compile_fun env_name binds body env in
     (reserve total_offset_padded tag) @ 
     (* put address in RAX, mask it *)
     [

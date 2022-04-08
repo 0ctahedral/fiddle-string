@@ -235,7 +235,19 @@ let oom = [
           t
         end"
         ""
-        "Out of memory"
+        "Out of memory";
+  tgcerr "oom_bigclose" (4 + builtins_size) "
+  let a = 5,
+  b = 4,
+  c = 5,
+  d = 5,
+  e = 5,
+  f = 5,
+  g = 5,
+  fun = (lambda (x, y, z):
+    x + y + z + a + b * c - d + e * f + g) in
+  fun(10, c, d)
+  " "" "Out of memory";
 ]
 
 let gc = [
@@ -249,6 +261,19 @@ let gc = [
        end"
       ""
       "(1, 2)";
+
+  tgc "gc_cyclic" (10 + builtins_size)
+      "let f = (lambda:
+        let t = (1, 2) in
+          (5, t)) in
+       begin
+         f();
+         f();
+         f();
+         f()
+       end"
+      ""
+      "(5, (1, 2))";
 
  tgc "gc_tup1" (10 + builtins_size)
       "let t = (1, 5),

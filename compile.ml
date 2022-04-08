@@ -825,14 +825,13 @@ let:
              this new environment *)
           (*let env_name = get_last_var env in*)
           let env_name = sprintf "closure_%d" ltag in
-          let new_si, args_env = List.fold_left (fun (new_si, args_env) name ->
-            (* NEW STRAT: put all variables on the stack and it is the job of the setup to get them out *)
-            (new_si + 1, (name, RegOffset(~-new_si * word_size, RBP))::args_env)) (1, []) args in
+          let _, args_env = List.fold_left (fun (new_si, args_env) name ->
+            (new_si + 1, (name, RegOffset(new_si * word_size, RBP))::args_env)) (3, []) args in
           let fv = (free_vars (ACExpr cexpr)) in
           (* TODO: is the tuple offset corrct? *)
           let new_si, fv_env = List.fold_left (fun (new_si, fv_env) x ->
             (new_si + 1, (x, RegOffset(~-new_si * word_size, RBP)) :: fv_env)
-          ) (new_si, []) fv  in
+          ) (1, []) fv  in
           let new_env = helpA body [(env_name, fv_env @ args_env)] new_si in
           new_env
       | _ -> raise (InternalCompilerError "helpL should only be called on a lambda")
@@ -975,14 +974,24 @@ and compile_aexpr (e : tag aexpr) (si : int) (env : arg name_envt name_envt) (nu
     | ASeq(bind, body, _) -> let comp_bind = (compile_cexpr bind si env num_args false name) in
                                      let comp_body = (compile_aexpr body si env num_args is_tail name) in
                                      comp_bind @ comp_body
-    | ALetRec([(bname, lambda)], body, _) -> let store_closure_ptr = [
-                                            IMov(Reg(RAX), Reg(R15));
-                                            IAdd(Reg(RAX), Const(closure_tag));
-                                            IMov((find_var_in_envt env bname name), Reg(RAX));
-                                            ] in
+    | ALetRec([(bname, lambda)], body, _) ->
+                                            let label = match lambda with
+                                                        | CLambda(_, _, tag) -> sprintf "closure_%d" tag
+                                                        | _ -> raise (InternalCompilerError "Lambda not lambda") in
                                             let comp_lambda = (compile_cexpr lambda si env num_args is_tail bname) in
                                             let comp_body = (compile_aexpr body si env num_args is_tail name) in
-                                            comp_lambda @ comp_body
+                                            let self_si = match (find_var_in_envt env bname label) with
+                                                          | RegOffset(bytes, _) -> ~-bytes / word_size
+                                                          | _ -> raise (InternalCompilerError "Environment mapping other than RegOffset")
+                                            in
+                                            (* Pointer to closure is in RAX, need to patch this into the closure *)
+                                            let patch = [ILineComment("patch value")] @ [
+                                              IMov(Reg(R11), Reg(RAX));
+                                              ISub(Reg(R11), Const(closure_tag));
+                                              IMov(RegOffset((self_si + 2) * word_size, R11), Reg(RAX));
+                                              IMov((find_var_in_envt env bname name), Reg(RAX));
+                                            ] in
+                                            comp_lambda @ patch @ comp_body 
     | ALetRec(_, _, _) -> raise (InternalCompilerError "Mutually recursive functions not implemented")
 and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (num_args : int) (is_tail : bool) (name: string): instruction list =
   match e with
@@ -1285,18 +1294,10 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
       ILabel(label); 
     ] @ prologue @
     [
-      ILineComment("get closure from heap");
       (* Get pointer to closure on heap, which is first argument *)
       IMov(Reg(RAX), RegOffset(2 * word_size, RBP));
       ISub(Reg(RAX), Const(closure_tag));
 
-      ILineComment(sprintf "args on stack (%d)" arity);
-    ] @ List.flatten (List.mapi (fun i arg ->
-        [
-          IMov(Reg(scratch_reg), RegOffset((i + 3) * word_size, RBP));
-          IMov((find_var_in_envt exec_env arg name), Reg(scratch_reg));
-        ]) binds) @
-    [
       ILineComment(sprintf "get closed vars (%d)" (List.length closed_vars));
     ] @
     (* Get values out of closure and onto stack *)

@@ -236,14 +236,17 @@ let gc = [
       "(1, 2)";
 
  tgc "gc_tup1" (10 + builtins_size)
-      "let t = (1, 5) in begin
-        t[0] := (1, 2, 3, 4, 5, 6, 7);
-        t[0] := 4;
-        t[0] := (7, 6, 5, 4, 3, 2, 1);
-        t
-      end"
+      "let t = (1, 5),
+        _ = (1, 2, 3, 4, 5, 6, 7),
+        _ = (7, 6, 5, 4, 3, 2, 1) in 
+        begin
+          t[0] := (7, 6, 5, 4, 3, 2, 1);
+          t
+        end
+      "
       ""
-      "((7, 6, 5, 4, 3, 2, 1), 5)"
+      "((7, 6, 5, 4, 3, 2, 1), 5)";
+
   ]
 
 let input = [
@@ -260,12 +263,14 @@ let gc_suite = "gc_tests">:::gc;;
 
 let () =
   run_test_tt_main ("all_tests">:::[
+    (*
     simple_suite;
     pair_suite;
     type_suite;
     fv_suite;
     program_suite;
     oom_suite;
+    *)
     gc_suite;
     input_file_test_suite ()])
 ;;

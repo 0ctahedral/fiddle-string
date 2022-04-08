@@ -109,6 +109,7 @@ void printHelp(FILE *out, SNAKEVAL val) {
     if ((*addr & CLOSURE_TAG_MASK) == FWD_PTR_TAG) {
       printf("Forwarding to ");
       printHelp(out, *addr - FWD_PTR_TAG + CLOSURE_TAG);
+      return;
     }
     fprintf(out, "[%p - 5] ==> <function arity %ld, closed %ld, fn-ptr %p>",
             (uint64_t *)val, addr[0] / 2, addr[2] / 2, (uint64_t *)addr[1]);
@@ -136,6 +137,7 @@ void printHelp(FILE *out, SNAKEVAL val) {
     if ((*addr & TUPLE_TAG_MASK) == FWD_PTR_TAG) {
       printf("Forwarding to ");
       printHelp(out, *addr - FWD_PTR_TAG + TUPLE_TAG);
+      return;
     }
     // Check whether we've visited this tuple already
     if ((*addr & 0x8000000000000000) != 0) {
@@ -407,8 +409,8 @@ uint64_t *try_gc(uint64_t *alloc_ptr, uint64_t bytes_needed,
 }
 
 int main(int argc, char **argv) {
-  HEAP_SIZE = 500;
-  // HEAP_SIZE = 22;
+  // HEAP_SIZE = 500;
+  HEAP_SIZE = 30;
   if (argc > 1) {
     HEAP_SIZE = atoi(argv[1]);
     // printf("Set heap size to %d\n", HEAP_SIZE);
@@ -416,6 +418,7 @@ int main(int argc, char **argv) {
   if (HEAP_SIZE < 0 || HEAP_SIZE > 1000000) {
     HEAP_SIZE = 0;
   }
+  // printf("Let's allocate a heap\n");
   HEAP = (uint64_t *)calloc(HEAP_SIZE + 15, sizeof(uint64_t));
 
   uint64_t *aligned = (uint64_t *)(((uint64_t)HEAP + 15) & ~0xF);

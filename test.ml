@@ -248,6 +248,23 @@ let oom = [
     x + y + z + a + b * c - d + e * f + g) in
   fun(10, c, d)
   " "" "Out of memory";
+
+  tgcerr "oom_bigclose2" (0 + builtins_size) "
+  let a = 5,
+  b = 4,
+  c = 5,
+  d = 5,
+  e = 5,
+  f = 5,
+  g = 5,
+  h = 5,
+  i = 5,
+  j = 5,
+  k = 5,
+  fun = (lambda (x, y, z):
+    x + y + z + a + b * c - d + e * f + g + h + i + j + k) in
+  fun(10, c, d)
+  " "" "Allocation";
 ]
 
 let gc = [
@@ -262,18 +279,37 @@ let gc = [
       ""
       "(1, 2)";
 
+  tgc "gc_lamb2" (10 + builtins_size)
+      "let f = (lambda(y): (lambda(x): x * x + y)) in
+       begin
+         f(1);
+         f(2);
+         f(3);
+         f(4);
+         f(5);
+         let g = f(6) in g(2)
+       end"
+       ""
+       "10";
+
   tgc "gc_cyclic" (10 + builtins_size)
       "let f = (lambda:
         let t = (1, 2) in
-          (5, t)) in
+          begin
+            t[1] := t;
+            t
+          end)
+        in
        begin
+         f();
+         f();
          f();
          f();
          f();
          f()
        end"
       ""
-      "(5, (1, 2))";
+      "(1, <cyclic tuple 1>)";
 
  tgc "gc_tup1" (10 + builtins_size)
       "let t = (1, 5),
@@ -282,10 +318,27 @@ let gc = [
         begin
           t[0] := (7, 6, 5, 4, 3, 2, 1);
           t
-        end
-      "
+        end "
       ""
       "((7, 6, 5, 4, 3, 2, 1), 5)";
+
+ tgc "gc1" (30 + builtins_size)
+      "let f = (lambda(x): let t = (1, 2, x) in (lambda: t)) in
+       let counter = (0,) in
+       let a = (lambda: begin
+                          counter[0] := counter[0] + 1;
+                          (f(counter[0])())
+                        end) in
+       begin
+         a();
+         a();
+         a();
+         a();
+         a()
+       end"
+       ""
+       "(1, 2, 5)";
+
 
  tgc "gc_lambda" (7 + builtins_size)
  "let b = 5 in

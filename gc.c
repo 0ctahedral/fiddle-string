@@ -66,9 +66,9 @@ void smarter_print_heap(uint64_t *from_start, uint64_t *from_end,
 uint64_t *copy_if_needed(uint64_t *garter_val_addr, uint64_t *heap_top) {
   // printf("Heap top called with %p\n", heap_top);
   uint64_t garter_val = *garter_val_addr;
-  printf("Copy if needed: ");
-  printHelp(stdout, garter_val);
-  printf("\n");
+  //printf("Copy if needed: ");
+  //printHelp(stdout, garter_val);
+  //printf("\n");
   uint64_t *heap_addr;
   uint64_t len;
   if ((garter_val & TUPLE_TAG_MASK) == TUPLE_TAG && garter_val != NIL) {
@@ -159,9 +159,9 @@ uint64_t *copy_if_needed(uint64_t *garter_val_addr, uint64_t *heap_top) {
  */
 uint64_t *gc(uint64_t *bottom_frame, uint64_t *top_frame, uint64_t *top_stack,
              uint64_t *from_start, uint64_t *from_end, uint64_t *to_start) {
-  printf("Running garbage collection, to start is: %p\n", to_start);
-  smarter_print_heap(from_start, from_end, to_start, to_start);
-  printf("\n");
+  //printf("Running garbage collection, to start is: %p\n", to_start);
+  //smarter_print_heap(from_start, from_end, to_start, to_start);
+  //printf("\n");
 
   uint64_t *old_top_frame = top_frame;
   uint64_t *old_to_start = to_start;
@@ -181,7 +181,7 @@ uint64_t *gc(uint64_t *bottom_frame, uint64_t *top_frame, uint64_t *top_stack,
   } while (old_top_frame < bottom_frame); // Use the old stack frame to decide
                                           // if there's more GC'ing to do
 
-  printf("finished looking through stack, to start is: %p\n", to_start);
+  //printf("finished looking through stack, to start is: %p\n", to_start);
 
   // printf("Copied stack, now copying heap\n");
   //  iterate over to-space and copy referenced items into to-space
@@ -193,9 +193,9 @@ uint64_t *gc(uint64_t *bottom_frame, uint64_t *top_frame, uint64_t *top_stack,
     curr++;
   }
 
-  printf("Completed garbage collection\n");
-  smarter_print_heap(from_start, from_end, old_to_start, to_start);
-  printf("\n");
+  //printf("Completed garbage collection\n");
+  //smarter_print_heap(from_start, from_end, old_to_start, to_start);
+  //printf("\n");
 
   // after copying and GC'ing all the stack frames, return the new allocation
   // starting point

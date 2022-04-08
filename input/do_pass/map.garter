@@ -1,0 +1,10 @@
+def map(f, l):
+  if l == nil:
+    nil
+  else:
+    (f(l[0]), map(f, l[1]))
+
+
+let list = (1, (2, (3, (4, nil)))),
+add = (lambda (n): n + 1) in
+map(add, list)

@@ -409,8 +409,7 @@ uint64_t *try_gc(uint64_t *alloc_ptr, uint64_t bytes_needed,
 }
 
 int main(int argc, char **argv) {
-  // HEAP_SIZE = 500;
-  HEAP_SIZE = 30;
+  HEAP_SIZE = 500;
   if (argc > 1) {
     HEAP_SIZE = atoi(argv[1]);
     // printf("Set heap size to %d\n", HEAP_SIZE);

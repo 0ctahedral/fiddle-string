@@ -1173,7 +1173,7 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
             1 exps in
             [
               ILineComment("tuple starts here");
-            ] @ (reserve total_offset tag) @
+            ] @ (reserve (total_offset * word_size) tag) @
             [
               (* put length of tuple in heap*)
               IMov(Reg(RAX), Const(Int64.of_int ((total_offset - 1) * 2)));
@@ -1276,7 +1276,7 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
     let total_offset = 3 + (List.length closed_vars) in
     let total_offset_padded = (total_offset + (total_offset mod 2)) in
     let (prologue, fnbody, epilogue) = compile_fun env_name binds body env in
-    (reserve total_offset_padded tag) @ 
+    (reserve (total_offset_padded * word_size) tag) @ 
     (* put address in RAX, mask it *)
     [
       ILineComment("begin lambda");

@@ -107,7 +107,6 @@ let program_tests = [
                 x * g) in
     let t = (1, 20) in
 f(f((0, 1)[1]))" "" "100";
-  (*TODO: cannot return just the lambda for some reason??*)
   t "curry_test" "
 let addx = (lambda (x): (lambda (y): x + y)),
     z = 5 
@@ -237,8 +236,8 @@ let gc = [
       "(1, 2)";
 
  tgc "gc_tup1" (10 + builtins_size)
-     "let t = ((1, 2, 3, 4, 5, 6, 7), 5) in
-      begin
+      "let t = (1, 5) in begin
+        t[0] := (1, 2, 3, 4, 5, 6, 7);
         t[0] := 4;
         t[0] := (7, 6, 5, 4, 3, 2, 1);
         t

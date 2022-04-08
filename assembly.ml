@@ -132,7 +132,7 @@ let rec i_to_asm (i : instruction) : string =
   | ICmp(left, right) ->
      sprintf "  cmp %s, %s" (arg_to_asm left) (arg_to_asm right)
   | ILabel(name) ->
-     name ^ ":"
+     "align 16\n" ^ name ^ ":"
   | IJo(label) ->
      sprintf "  jo near %s" (arg_to_asm label)
   | IJno(label) ->

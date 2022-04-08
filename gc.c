@@ -75,7 +75,7 @@ uint64_t *copy_if_needed(uint64_t *garter_val_addr, uint64_t *heap_top) {
     // printf("Found tuple, copying: \n");
     // printHelp(stdout, garter_val);
     // printf("\n");
-    //  untag to get addr to heap thing
+    //   untag to get addr to heap thing
     heap_addr = (uint64_t *)(garter_val - TUPLE_TAG);
     if ((*heap_addr & TUPLE_TAG_MASK) == FWD_PTR_TAG) {
       // printf("Found forwarding pointer, updating\n");

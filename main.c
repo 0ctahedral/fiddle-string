@@ -111,7 +111,7 @@ void printHelp(FILE *out, SNAKEVAL val) {
       printHelp(out, *addr - FWD_PTR_TAG + CLOSURE_TAG);
     }
     fprintf(out, "[%p - 5] ==> <function arity %ld, closed %ld, fn-ptr %p>",
-            (uint64_t *)val, addr[0], addr[2] / 2, (uint64_t *)addr[1]);
+            (uint64_t *)val, addr[0] / 2, addr[2] / 2, (uint64_t *)addr[1]);
     fprintf(out, "\nClosed-over values:\n");
     for (uint64_t i = 0; i < addr[2] / 2; i++) {
       if (i > 0) {
@@ -379,6 +379,8 @@ uint64_t *try_gc(uint64_t *alloc_ptr, uint64_t bytes_needed,
   // == HEAP_END, that does not mean we're *using* the byte at HEAP_END, but
   // rather that it would be the next free byte, which is still ok and not a
   // heap-overflow.
+  // printf("Need %lu words, heap is %lu words\n", bytes_needed /
+  // sizeof(uint64_t), HEAP_SIZE);
   if (bytes_needed / sizeof(uint64_t) > HEAP_SIZE) {
     fprintf(
         stderr,
@@ -405,8 +407,8 @@ uint64_t *try_gc(uint64_t *alloc_ptr, uint64_t bytes_needed,
 }
 
 int main(int argc, char **argv) {
-  // HEAP_SIZE = 500;
-  HEAP_SIZE = 40;
+  HEAP_SIZE = 500;
+  // HEAP_SIZE = 22;
   if (argc > 1) {
     HEAP_SIZE = atoi(argv[1]);
     // printf("Set heap size to %d\n", HEAP_SIZE);

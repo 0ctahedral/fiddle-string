@@ -311,7 +311,7 @@ let gc = [
       ""
       "(1, <cyclic tuple 1>)";
 
- tgc "gc_tup1" (10 + builtins_size)
+ tgc "gc_tup1" (12 + builtins_size)
       "let t = (1, 5),
         _ = (1, 2, 3, 4, 5, 6, 7),
         _ = (7, 6, 5, 4, 3, 2, 1) in 
@@ -322,7 +322,7 @@ let gc = [
       ""
       "((7, 6, 5, 4, 3, 2, 1), 5)";
 
- tgc "gc1" (30 + builtins_size)
+ tgc "gc1" (22 + builtins_size)
       "let f = (lambda(x): let t = (1, 2, x) in (lambda: t)) in
        let counter = (0,) in
        let a = (lambda: begin
@@ -340,7 +340,7 @@ let gc = [
        "(1, 2, 5)";
 
 
- tgc "gc_lambda" (7 + builtins_size)
+ tgc "gc_lambda" (8 + builtins_size)
  "let b = 5 in
   let rec f = (lambda (x): (1 + b, x)) in
     begin

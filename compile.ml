@@ -20,14 +20,14 @@ let print_env env how =
 let const_true       = HexConst(0xFFFFFFFFFFFFFFFFL)
 let const_false      = HexConst(0x7FFFFFFFFFFFFFFFL)
 let bool_mask        = HexConst(0x8000000000000000L)
-let bool_tag         = 0x0000000000000007L
-let bool_tag_mask    = 0x0000000000000007L
+let bool_tag         = 0x000000000000000FL
+let bool_tag_mask    = 0x000000000000000FL
 let num_tag          = 0x0000000000000000L
 let num_tag_mask     = 0x0000000000000001L
 let closure_tag      = 0x0000000000000005L
-let closure_tag_mask = 0x0000000000000007L
+let closure_tag_mask = 0x000000000000000FL
 let tuple_tag        = 0x0000000000000001L
-let tuple_tag_mask   = 0x0000000000000007L
+let tuple_tag_mask   = 0x000000000000000FL
 let const_nil        = HexConst(tuple_tag)
 
 let err_COMP_NOT_NUM     = 1L
@@ -157,6 +157,7 @@ let is_well_formed (p : sourcespan program) : (sourcespan program) fallible =
          [Overflow(n, loc)]
        else
          []
+    | EString _ -> []
     | EId (x, loc) -> if (find_one (List.map fst env) x) then [] else [UnboundId(x, loc)]
     | EPrim1(_, e, _) -> wf_E e env
     | EPrim2(_, l, r, _) -> wf_E l env @ wf_E r env
@@ -425,6 +426,7 @@ let desugar (p : sourcespan program) : sourcespan program =
     | ESetItem(e, idx, newval, tag) -> ESetItem(helpE e, helpE idx, helpE newval, tag)
     | EId(x, tag) -> EId(x, tag)
     | ENumber(n, tag) -> ENumber(n, tag)
+    | EString(s, tag) -> EString(s, tag)
     | EBool(b, tag) -> EBool(b, tag)
     | ENil(t, tag) -> ENil(t, tag)
     | EPrim1(op, e, tag) ->
@@ -505,6 +507,7 @@ let rename_and_tag (p : tag program) : tag program =
     | EPrim2(op, left, right, tag) -> EPrim2(op, helpE env left, helpE env right, tag)
     | EIf(c, t, f, tag) -> EIf(helpE env c, helpE env t, helpE env f, tag)
     | ENumber _ -> e
+    | EString _ -> e
     | EBool _ -> e
     | ENil _ -> e
     | EId(name, tag) ->
@@ -629,6 +632,9 @@ let anf (p : tag program) : unit aprogram =
        let (e2_imm, e2_setup) = helpI e2 in
        (e2_imm, e1_setup @ e2_setup)
 
+    | EString(s, tag) ->
+       let tmp = sprintf "str_%d" tag in
+       (ImmId(tmp, ()),  [BLet (tmp, CString(s, ()))])
 
     | ETuple(args, tag) ->
        let tmp = sprintf "tup_%d" tag in
@@ -731,6 +737,7 @@ let free_vars (e: 'a aexpr) : string list =
         | _ -> let arg_free_vars = List.flatten (List.map (fun arg -> helpI arg env) args) in
                                          (helpI func env) @ arg_free_vars)
     | CImmExpr(imm) -> helpI imm env
+    | CString _ -> []
     | CTuple(imms, _) -> List.flatten (List.map (fun imm -> helpI imm env) imms)
     | CGetItem(tup, idx, _) -> (helpI tup env) @ (helpI idx env)
     | CSetItem(tup, idx, v, _) -> (helpI tup env) @ (helpI idx env) @ (helpI v env)
@@ -1172,6 +1179,7 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
           ILabel(thn_label); ] @
         (compile_aexpr thn si env num_args is_tail name) @
         [ ILabel(done_label); ])
+    | CString(s, tag) -> raise (NotYetImplemented "strings")
     | CTuple(exps, tag) -> 
             let total_offset, set_tuple = List.fold_left_map
             (fun offset e -> (offset + 1, [IMov(Reg(RAX), (compile_imm e env name)); IMov(RegOffset(offset * word_size, R15), Reg(RAX))]))

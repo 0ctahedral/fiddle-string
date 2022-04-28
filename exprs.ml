@@ -77,6 +77,7 @@ and 'a cexpr = (* compound expressions *)
   | CPrim2 of prim2 * 'a immexpr * 'a immexpr * 'a
   | CApp of 'a immexpr * 'a immexpr list * call_type * 'a
   | CImmExpr of 'a immexpr (* for when you just need an immediate value *)
+  | CString of string * 'a
   | CTuple of 'a immexpr list * 'a
   | CGetItem of 'a immexpr * 'a immexpr * 'a
   | CSetItem of 'a immexpr * 'a immexpr * 'a immexpr * 'a
@@ -103,6 +104,7 @@ let get_tag_E e = match e with
   | EIf(_, _, _, t) -> t
   | ENil t -> t
   | ENumber(_, t) -> t
+  | EString(_, t) -> t
   | EBool(_, t) -> t
   | EId(_, t) -> t
   | EApp(_, _, _, t) -> t
@@ -126,6 +128,7 @@ let rec map_tag_E (f : 'a -> 'b) (e : 'a expr) =
   | ESetItem(e, idx, newval, a) -> ESetItem(map_tag_E f e, map_tag_E f idx, map_tag_E f newval, f a)
   | EId(x, a) -> EId(x, f a)
   | ENumber(n, a) -> ENumber(n, f a)
+  | EString(s, a) -> EString(s, f a)
   | EBool(b, a) -> EBool(b, f a)
   | ENil a -> ENil(f a)
   | EPrim1(op, e, a) ->
@@ -227,6 +230,7 @@ and untagE e =
   | ESetItem(e, idx, newval, _) -> ESetItem(untagE e, untagE idx, untagE newval, ())
   | EId(x, _) -> EId(x, ())
   | ENumber(n, _) -> ENumber(n, ())
+  | EString(s, _) -> EString(s, ())
   | EBool(b, _) -> EBool(b, ())
   | ENil _ -> ENil ()
   | EPrim1(op, e, _) ->
@@ -286,6 +290,9 @@ let atag (p : 'a aprogram) : tag aprogram =
        let app_tag = tag() in
        CApp(helpI func, List.map helpI args, native, app_tag)
     | CImmExpr i -> CImmExpr (helpI i)
+    | CString(s, _) ->
+       let string_tag = tag() in
+       CString(s, string_tag)
     | CTuple(es, _) ->
        let tup_tag = tag() in
        CTuple(List.map helpI es, tup_tag)

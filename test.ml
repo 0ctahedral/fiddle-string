@@ -360,6 +360,10 @@ let input = [
     t "input1" "let x = input() in x + 2" "123" "125"
   ]
 
+let string_tests = [
+  t "simple_string" "let x = \"blah\" in x" "" "blah";
+]
+
 let program_suite = "program_tests">:::program_tests;;
 let type_suite = "type_tests">:::type_tests;;
 let pair_suite = "pair_tests">:::pair_tests;;
@@ -367,9 +371,11 @@ let simple_suite = "pair_tests">:::simple_tests;;
 let fv_suite = "free_vars_tests">:::fv_tests;;
 let oom_suite = "oom_tests">:::oom;;
 let gc_suite = "gc_tests">:::gc;;
+let string_suite = "string_tests">:::string_tests;;
 
 let () =
   run_test_tt_main ("all_tests">:::[
+    string_suite;
     simple_suite;
     pair_suite;
     type_suite;

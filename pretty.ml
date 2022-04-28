@@ -161,6 +161,7 @@ and string_of_cexpr_with (depth : int) (print_a : 'a -> string) (c : 'a cexpr) :
   let string_of_immexpr = string_of_immexpr_with print_a in
   if depth <= 0 then "..." else
   match c with
+  | CString(s, a) -> sprintf "\"%s\"%s" s (print_a a)
   | CTuple(imms, a) -> sprintf "(%s)%s" (ExtString.String.join ", " (List.map string_of_immexpr imms)) (print_a a)
   | CGetItem(e, idx, a) -> sprintf "%s[%s]%s" (string_of_immexpr e) (string_of_immexpr idx) (print_a a)
   | CSetItem(e, idx, newval, a) -> sprintf "%s[%s] := %s %s" (string_of_immexpr e) (string_of_immexpr idx) (string_of_immexpr newval) (print_a a)
@@ -265,6 +266,10 @@ let rec format_expr (fmt : Format.formatter) (print_a : 'a -> string) (e : 'a ex
   | ENumber(n, a) ->
      open_label fmt "ENumber" (print_a a);
      pp_print_string fmt (Int64.to_string n);
+     close_paren fmt
+  | EString(s, a) ->
+     open_label fmt "EString" (print_a a);
+     pp_print_string fmt s;
      close_paren fmt
   | EBool(b, a) ->
      open_label fmt "EBool" (print_a a);

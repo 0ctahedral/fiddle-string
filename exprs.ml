@@ -52,6 +52,7 @@ and 'a expr =
   | EPrim2 of prim2 * 'a expr * 'a expr * 'a
   | EIf of 'a expr * 'a expr * 'a expr * 'a
   | ENumber of int64 * 'a
+  | EString of string * 'a
   | EBool of bool * 'a
   | ENil of 'a
   | EId of string * 'a

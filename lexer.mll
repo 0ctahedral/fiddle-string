@@ -37,6 +37,7 @@ rule token = parse
   | blank { token lexbuf }
   | '\n' { new_line lexbuf; token lexbuf }
   | signed_int as x { NUM (Int64.of_string x) }
+  | '"' { read_string (Buffer.create 80) lexbuf }
   | ":=" { COLONEQ }
   | ":" { COLON }
   | "def" { DEF }
@@ -82,4 +83,20 @@ rule token = parse
   | ident as x { if x = "_" then UNDERSCORE else ID x }
   | eof { EOF }
   | _ as c { failwith (sprintf "Unrecognized character: %c" c) }
-
+(* thanks real world ocaml *)
+and read_string buf =
+  parse
+  | '"'       { STRING (Buffer.contents buf) }
+  | '\\' '/'  { Buffer.add_char buf '/'; read_string buf lexbuf }
+  | '\\' '\\' { Buffer.add_char buf '\\'; read_string buf lexbuf }
+  | '\\' 'b'  { Buffer.add_char buf '\b'; read_string buf lexbuf }
+  | '\\' 'f'  { Buffer.add_char buf '\012'; read_string buf lexbuf }
+  | '\\' 'n'  { Buffer.add_char buf '\n'; read_string buf lexbuf }
+  | '\\' 'r'  { Buffer.add_char buf '\r'; read_string buf lexbuf }
+  | '\\' 't'  { Buffer.add_char buf '\t'; read_string buf lexbuf }
+  | [^ '"' '\\']+
+    { Buffer.add_string buf (Lexing.lexeme lexbuf);
+      read_string buf lexbuf
+    }
+  | _ { failwith ("Illegal string character: " ^ Lexing.lexeme lexbuf) }
+  | eof { failwith ("String is not terminated") }

@@ -85,6 +85,7 @@ and string_of_expr_with (depth : int) (print_a : 'a -> string) (e : 'a expr) : s
   | EGetItem(e, idx, a) -> sprintf "%s[%s]%s" (string_of_expr e) (string_of_expr idx) (print_a a)
   | ESetItem(e, idx, newval, a) -> sprintf "%s[%s] := %s %s" (string_of_expr e) (string_of_expr idx) (string_of_expr newval) (print_a a)
   | ENumber(n, a) -> (Int64.to_string n) ^ (print_a a)
+  | EString(s, a) -> s ^ (print_a a)
   | EBool(b, a) -> (string_of_bool b) ^ (print_a a)
   | ENil a -> "nil " ^ (print_a a)
   | EId(x, a) -> x ^ (print_a a)

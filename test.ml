@@ -50,6 +50,7 @@ let fv_tests = [
   tfvs "x" "x" ["x"];
   tfvs "let_x" "let x = 5 in x" [];
   tfvs "let_x_y" "let x = 5 in y" ["y"];
+  tfvs "let_x_y2" "let x = 5 in let y = a + 5 in y" ["a"];
   tfvs "fv_let2" "let x = y, z = h in x + z" ["y"; "h"];
   tfvs "fv_lambda" "(lambda(x): x * y)" ["y";];
   tfvs "fv_lambda_some_args" "(lambda(a, b): a + b)" [];

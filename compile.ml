@@ -1197,7 +1197,7 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
             IMov(Reg(AH), Char(c));
             IMov(RegOffset(i * char_size, R15), Reg(AX));
           ])
-        ) (4, [IMov(Reg(AL), Const(0L))]) s) in
+        ) (4, [IMov(Reg(AL), Char('@'))]) s) in
         [
           ILineComment("string starts here");
         ] @ (reserve (offset_padded * word_size) tag) @

@@ -1,5 +1,5 @@
 # Fiddle-String Snake
-todo: insert picture of snake
+![fiddle string snake](./snake.jpg)
 
 ## String type:
 

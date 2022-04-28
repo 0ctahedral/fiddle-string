@@ -21,7 +21,9 @@ type reg =
   | R14
   | R15
   | CL
+  | AX
   | AL
+  | AH
 
 type size =
   | QWORD_PTR
@@ -32,6 +34,7 @@ type size =
 type arg =
   | Const of int64
   | HexConst of int64
+  | Char of char
   | Reg of reg
   | RegOffset of int * reg (* int is # words of offset *)
   | RegOffsetReg of reg * reg * int * int
@@ -96,12 +99,15 @@ let r_to_asm (r : reg) : string =
   | R14 -> "R14"
   | R15 -> "R15"
   | CL  -> "CL"
+  | AX  -> "AX"
   | AL  -> "AL"
+  | AH  -> "AH"
 
 let rec arg_to_asm (a : arg) : string =
   match a with
   | Const(n) -> sprintf "%Ld" n
   | HexConst(n) -> sprintf "0x%Lx" n
+  | Char(c) -> sprintf "%d" (Char.code c)
   | Reg(r) -> r_to_asm r
   | RegOffset(n, r) ->
      if n >= 0 then

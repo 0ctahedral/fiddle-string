@@ -1,5 +1,0 @@
-let a = 10,
-  c = a + 5
-in
-let b = a + c in
-    b

@@ -1,6 +1,0 @@
-let addx = (lambda (x): let g = (lambda (y): x + y) in g),
-    z = 5 
-in
-let f = addx(z)
-in
-f(6)

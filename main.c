@@ -31,6 +31,8 @@ const uint64_t NUM_TAG = 0x0000000000000000;
 const uint64_t BOOL_TAG = 0x000000000000000F;
 const uint64_t FWD_PTR_TAG = 0x0000000000000003;
 const uint64_t TUPLE_TAG = 0x0000000000000001;
+const uint64_t STRING_TAG = 0x0000000000000007L;
+const uint64_t STRING_TAG_MASK = 0x000000000000000FL;
 const uint64_t CLOSURE_TAG = 0x0000000000000005;
 const uint64_t BOOL_TRUE = 0xFFFFFFFFFFFFFFFF;
 const uint64_t BOOL_FALSE = 0x7FFFFFFFFFFFFFFF;
@@ -169,6 +171,17 @@ void printHelp(FILE *out, SNAKEVAL val) {
     *(addr) = len; // length is encoded
   } else if ((val & TUPLE_TAG_MASK) == FWD_PTR_TAG) {
     fprintf(out, "forwarding to %p", (uint64_t *)val);
+  } else if ((val & STRING_TAG_MASK) == STRING_TAG) {
+    uint64_t *addr = (uint64_t *)(val - STRING_TAG);
+    uint64_t length = (*addr) / 2;
+    uint8_t* c = (uint8_t*)(addr+1);
+    // loop over all characters
+    // print out every other character
+    fprintf(out, "\"");
+    for (int i = 1; i < length * 2; i += 2) {
+      fprintf(out, "%c", c[i]);
+    }
+    fprintf(out, "\"");
   } else {
     fprintf(out, "Unknown value: %#018lx", val);
   }

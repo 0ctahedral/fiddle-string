@@ -28,6 +28,8 @@ let closure_tag      = 0x0000000000000005L
 let closure_tag_mask = 0x000000000000000FL
 let tuple_tag        = 0x0000000000000001L
 let tuple_tag_mask   = 0x000000000000000FL
+let string_tag       = 0x0000000000000007L
+let string_tag_mask  = 0x000000000000000FL
 let const_nil        = HexConst(tuple_tag)
 
 let err_COMP_NOT_NUM     = 1L
@@ -1179,7 +1181,38 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
           ILabel(thn_label); ] @
         (compile_aexpr thn si env num_args is_tail name) @
         [ ILabel(done_label); ])
-    | CString(s, tag) -> raise (NotYetImplemented "strings")
+    | CString(s, tag) -> 
+        let len = String.length s in
+        (* length and string fitted into words *)
+        let char_size = 2 in
+        let char_per_word = word_size / char_size in
+        let offset = 1 + (
+          let remainder = len mod char_per_word in
+          if remainder = 0 then (len / char_per_word)
+          else (len / char_per_word) + 1
+        ) in
+        let offset_padded = offset + (offset mod 2) in
+        let (_, set_string) = (String.fold_left (fun (i, acc) c ->
+          (i + 1, acc @ [
+            IMov(Reg(AH), Char(c));
+            IMov(RegOffset(i * char_size, R15), Reg(AX));
+          ])
+        ) (4, [IMov(Reg(AL), Const(0L))]) s) in
+        [
+          ILineComment("string starts here");
+        ] @ (reserve (offset_padded * word_size) tag) @
+        [
+          (* put length of string in heap*)
+          IMov(Reg(RAX), Const(Int64.of_int (len * 2)));
+          IMov(RegOffset(0 * word_size, R15), Reg(RAX));
+        ] @ set_string @ [
+          (* put address in RAX, mask it *)
+          IMov(Reg(RAX), Reg(R15));
+          IAdd(Reg(RAX), HexConst(string_tag));
+          IAdd(Reg(R15), Const(Int64.of_int (word_size * offset_padded)));
+          (* increase the heap pointer and pad if needed *)
+          ILineComment("string ends here");
+        ]
     | CTuple(exps, tag) -> 
             let total_offset, set_tuple = List.fold_left_map
             (fun offset e -> (offset + 1, [IMov(Reg(RAX), (compile_imm e env name)); IMov(RegOffset(offset * word_size, R15), Reg(RAX))]))
@@ -1196,7 +1229,7 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
             [
             (* put address in RAX, mask it *)
               IMov(Reg(RAX), Reg(R15));
-              IAdd(Reg(RAX), Const(1L));
+              IAdd(Reg(RAX), HexConst(tuple_tag));
               IAdd(Reg(R15), Const(Int64.of_int (word_size * total_offset_padded)));
             (* increase the heap pointer and pad if needed *)
               ILineComment("tuple ends here");

@@ -1,6 +1,0 @@
-let t = (4, (5, 6)) in
-            begin
-              let b = true in
-                if b: t[0] := 7 else: t[1] := 7;
-              print(t)
-            end

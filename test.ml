@@ -361,7 +361,12 @@ let input = [
   ]
 
 let string_tests = [
-  t "simple_string" "let x = \"blah\" in x" "" "blah";
+  t "simple_string" {|let x = "blah" in x|} "" {|"blah"|};
+  t "rem_string" {|let x = "foobar" in x|} "" {|"foobar"|};
+  t "empty_string" {|let x = "" in x|} "" {|""|};
+  t "escape_string" {|let x = "a\nb\n" in x|} "" {|"a
+b
+"|};
 ]
 
 let program_suite = "program_tests">:::program_tests;;

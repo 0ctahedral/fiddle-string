@@ -17,6 +17,8 @@ type prim1 =
   | IsBool
   | IsNum
   | IsTuple
+  | IsString
+  | Len
   | Not
   | PrintStack
 

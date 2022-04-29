@@ -191,6 +191,16 @@ let type_tests = [
   t "test_is_num6" "isnum((true,123))" "" "false";
   t "test_is_num7" "isnum((123,123))" "" "false";
   t "test_is_num8" "isnum((false,123))" "" "false";
+
+  t "test_is_string1" "isstring(\"bloopy\")" "" "true";
+  t "test_is_string2" "isstring(true)" "" "false";
+  t "test_is_string3" "isstring(false)" "" "false";
+  t "test_is_string4" "isstring(0)" "" "false";
+  t "test_is_string5" "isstring(123)" "" "false";
+  t "test_is_string6" "isstring((0,123))" "" "false";
+  t "test_is_string7" "isstring((true,123))" "" "false";
+  t "test_is_string8" "isstring((123,123))" "" "false";
+  t "test_is_string9" "isstring((false,123))" "" "false";
 ];;
 
 let pair_tests = [
@@ -367,6 +377,10 @@ let string_tests = [
   t "escape_string" {|let x = "a\nb\n" in x|} "" {|"a
 b
 "|};
+
+  t "str_len" {|let x = "blah" in len(x)|} "" "4";
+  t "str_len_empty" {|let x = "" in len(x)|} "" "0";
+  terr "str_len_not_str" {|let x = 5 in len(x)|} "" "expected string";
 ]
 
 let program_suite = "program_tests">:::program_tests;;

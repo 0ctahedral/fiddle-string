@@ -16,6 +16,8 @@ let string_of_op1 op =
   | PrintStack -> "printStack"
   | Not -> "!"
   | IsNum -> "isnum"
+  | IsString -> "isstring"
+  | Len -> "len"
   | IsBool -> "isbool"
   | IsTuple -> "istuple"
 
@@ -26,6 +28,8 @@ let name_of_op1 op =
   | PrintStack -> "PrintStack"
   | Not -> "Not"
   | IsNum -> "IsNum"
+  | IsString -> "IsString"
+  | Len -> "Len"
   | IsBool -> "IsBool"
   | IsTuple -> "IsTuple"
 

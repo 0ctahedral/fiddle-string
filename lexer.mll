@@ -48,6 +48,8 @@ rule token = parse
   | "false" { FALSE }
   | "istuple" { ISTUPLE }
   | "isbool" { ISBOOL }
+  | "isstring" { ISSTRING }
+  | "len" { LEN }
   | "isnum" { ISNUM }
   | "add1" { ADD1 }
   | "sub1" { SUB1 }

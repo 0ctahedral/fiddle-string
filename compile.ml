@@ -49,6 +49,7 @@ let err_SET_NOT_NUM      = 14L
 let err_SET_HIGH_INDEX   = 15L
 let err_CALL_NOT_CLOSURE = 16L
 let err_CALL_ARITY_ERR   = 17L
+let err_LEN_NOT_STRING   = 18L
 
 
 let dummy_span = (Lexing.dummy_pos, Lexing.dummy_pos);;
@@ -1044,6 +1045,30 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
               IMov(Reg(RAX), const_false);
               IOr(Reg(RAX), Reg(R11));
             ]
+        | IsString -> [
+              IMov(Reg(RAX), imm_arg);
+              IAnd(Reg(RAX), Const(string_tag_mask));
+              IMov(Reg(R11), Const(1L));
+              IMov(Reg(CL), Reg(AL));
+              IShl(Reg(R11), Reg(CL));
+              IShl(Reg(R11), Const(Int64.sub 63L string_tag));
+              IMov(Reg(RAX), const_false);
+              IOr(Reg(RAX), Reg(R11));
+        ]
+        | Len -> 
+        let e_isstring = (compile_cexpr (CPrim1(IsString, imm, tag)) si env num_args is_tail name) in
+        e_isstring @
+        [
+          IMov(Reg(RDI), const_true);
+          ICmp(Reg(RAX), Reg(RDI));
+          IMov(Reg(RAX), imm_arg);
+          IJne(Label("?err_len_not_string"));
+
+          (* remove mask *)
+          ISub(Reg(RAX), Const(string_tag));
+          (* get the length into rax *)
+          IMov(Reg(RAX), RegOffset(0, RAX));
+        ]
         | IsTuple -> [
               IMov(Reg(RAX), imm_arg);
               IAnd(Reg(RAX), Const(tuple_tag_mask));
@@ -1530,6 +1555,7 @@ global ?our_code_starts_here" in
 ?err_call_arity_err:%s
 ?err_get_not_num:%s
 ?err_set_not_num:%s
+?err_len_not_string:%s
 "
                        (to_asm (native_call (Label "?error") [Const(err_COMP_NOT_NUM); Reg(scratch_reg)]))
                        (to_asm (native_call (Label "?error") [Const(err_ARITH_NOT_NUM); Reg(scratch_reg)]))
@@ -1548,6 +1574,7 @@ global ?our_code_starts_here" in
                        (to_asm (native_call (Label "?error") [Const(err_CALL_ARITY_ERR); Reg(scratch_reg)]))
                        (to_asm (native_call (Label "?error") [Const(err_GET_NOT_NUM); Reg(scratch_reg)]))
                        (to_asm (native_call (Label "?error") [Const(err_SET_NOT_NUM); Reg(scratch_reg)]))
+                       (to_asm (native_call (Label "?error") [Const(err_LEN_NOT_STRING); Reg(RAX)]))
   in
   match anfed with
   | AProgram(body, _) ->

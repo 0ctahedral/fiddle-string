@@ -67,6 +67,7 @@ rule token = parse
   | "[" { LBRACK }
   | "]" { RBRACK }
   | "+" { PLUS }
+  | "^" { CONCAT }
   | "-" { MINUS }
   | "*" { TIMES }
   | ":=" { COLONEQ }

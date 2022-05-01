@@ -917,19 +917,18 @@ let rec replicate x i =
   if i = 0 then []
   else x :: (replicate x (i - 1))
 
-and reserve size tag =
+and reserve_size_arg size_arg tag =
   (* For testing, perform gc on each allocation *)
   let ok = sprintf "$memcheck_%d" tag in
   [
-    IInstrComment(IMov(Reg(RAX), LabelContents("?HEAP_END")),
-                 sprintf "Reserving %d words" (size / word_size));
-    ISub(Reg(RAX), Const(Int64.of_int size));
+    IMov(Reg(RAX), LabelContents("?HEAP_END"));
+    ISub(Reg(RAX), size_arg);
     ICmp(Reg(RAX), Reg(heap_reg));
     IJge(Label ok);
   ] @
   (native_call (Label "?try_gc") [
          (Sized(QWORD_PTR, Reg(heap_reg))); (* alloc_ptr in C *)
-         (Sized(QWORD_PTR, Const(Int64.of_int size))); (* bytes_needed in C *)
+         (Sized(QWORD_PTR, size_arg)); (* bytes_needed in C *)
          (Sized(QWORD_PTR, Reg(RBP))); (* first_frame in C *)
          (Sized(QWORD_PTR, Reg(RSP))); (* stack_top in C *)
     ])
@@ -937,6 +936,9 @@ and reserve size tag =
       IInstrComment(IMov(Reg(heap_reg), Reg(RAX)), "assume gc success if returning here, so RAX holds the new heap_reg value");
       ILabel(ok);
     ]
+and reserve size tag =
+  ILineComment(sprintf "Reserving %d words" (size / word_size))::
+  reserve_size_arg (Const(Int64.of_int size)) tag
 (* IMPLEMENT THIS FROM YOUR PREVIOUS ASSIGNMENT *)
 (* Additionally, you are provided an initial environment of values that you may want to
    assume should take up the first few stack slots.  See the compiliation of Programs
@@ -1093,6 +1095,82 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
             IMov(Reg(RDI), comp_e2);
             IAdd(Reg(RAX), Reg(RDI));
           ] @ check_overflow
+          | Concat ->
+            let get_e1_len = compile_cexpr (CPrim1(Len, e1, tag)) si env num_args is_tail name in
+            let get_e2_len = compile_cexpr (CPrim1(Len, e2, tag)) si env num_args is_tail name in
+            (* Get total length of concat string *)
+            [ILineComment(sprintf "concat_%d" tag)] @
+            get_e2_len @ [
+              IPush(Reg(RAX));
+            ] @ get_e1_len @ [
+            (* e2 len in R11 *)
+            IPop(Reg(R11));
+            (* Store e1 len on stack for use later *)
+            IPush(Reg(RAX));
+            (* Get total length of concatenated string *)
+            IAdd(Reg(R11), Reg(RAX));
+            (* R11 now stores new string length in characters as snakeval, which is equivalent to machine number of bytes needed *)
+            IPush(Reg(R11));
+            (* Add 8 bytes for length word in new string *)
+            IAdd(Reg(R11), Const(8L));
+            (* Pad value to nearest multiple of 16 *)
+            IAdd(Reg(R11), Const(15L));
+            IShr(Reg(R11), Const(4L));
+            IShl(Reg(R11), Const(4L));
+            IPush(Reg(R11));
+            (* Reserve space for new string *)
+            ] @ reserve_size_arg (Reg(R11)) tag @ [
+              (* Store new R15 temporarily in R14 *)
+              IPop(Reg(R14));
+              IAdd(Reg(R14), Reg(R15));
+              (* First word is new combined length *)
+              IPop(Reg(RAX));
+              IMov(RegOffset(0, R15), Reg(RAX));
+              (* Load pointer to e1 into RDI *)
+              IMov(Reg(RDI), comp_e1);
+              ISub(Reg(RDI), HexConst(string_tag));
+              (* Length of e1 in R12 *)
+              IPop(Reg(R12));
+              (* Use R11 as counter, starting at first character *)
+              IMov(Reg(R11), Const(0L));
+              ILabel(sprintf "concat1_%d" tag);
+              ICmp(Reg(R12), Reg(R11));
+              IJle(Label(sprintf "done1_%d" tag));
+              (* Copy a character from e1 to new string *)
+              IMov(Reg(AX), RegOffsetReg(RDI, R11, 1, 8));
+              IMov(RegOffsetReg(R15, R11, 1, 8), Reg(AX));
+              (* Increment R11 to next character, jump back to top of loop *)
+              IAdd(Reg(R11), Const(2L));
+              IJmp(Label(sprintf "concat1_%d" tag));
+              ILabel(sprintf "done1_%d" tag);
+
+              (* Load pointer to e2 into RDI *)
+              IMov(Reg(RDI), comp_e2);
+              ISub(Reg(RDI), HexConst(string_tag));
+              (* Point to next character to copy *)
+              IAdd(Reg(RDI), Const(8L));
+              (* Total length in R12 *)
+              IMov(Reg(R12), RegOffset(0, R15));
+              ILabel(sprintf "concat2_%d" tag);
+              (* See if we have copied total length of new string yet *)
+              ICmp(Reg(R12), Reg(R11));
+              IJle(Label(sprintf "done2_%d" tag));
+              (* Copy character *)
+              IMov(Reg(AX), RegOffset(0, RDI));
+              IMov(RegOffsetReg(R15, R11, 1, 8), Reg(AX));
+              (* Increment R11 and RDI to point to next character *)
+              IAdd(Reg(R11), Const(2L));
+              IAdd(Reg(RDI), Const(2L));
+              IJmp(Label(sprintf "concat2_%d" tag));
+              ILabel(sprintf "done2_%d" tag);
+
+              (* Tag pointer to new string, move into RAX *)
+              IMov(Reg(RAX), Reg(R15));
+              IAdd(Reg(RAX), HexConst(string_tag));
+
+              (* Update R15 to new value *)
+              IMov(Reg(R15), Reg(R14));
+            ]
           | Minus -> check_arith(comp_e1) @ check_arith(comp_e2) @ [
             IMov(Reg(RAX), comp_e1);
             IMov(Reg(RDI), comp_e2);

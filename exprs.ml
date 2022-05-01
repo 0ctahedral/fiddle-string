@@ -24,6 +24,7 @@ type prim1 =
 
 type prim2 =
   | Plus
+  | Concat
   | Minus
   | Times
   | And

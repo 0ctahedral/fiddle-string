@@ -381,6 +381,12 @@ b
   t "str_len" {|let x = "blah" in len(x)|} "" "4";
   t "str_len_empty" {|let x = "" in len(x)|} "" "0";
   terr "str_len_not_str" {|let x = 5 in len(x)|} "" "expected string";
+  t "concat1" {|"hello " ^ "world"|} "" {|"hello world"|};
+  terr "concat_not_str1" {|4 ^ ""|} "" "expected string";
+  terr "concat_not_str2" {|"hello" ^ 4|} "" "expected string";
+  t "concat2" {|"" ^ ""|} "" {|""|};
+  t "concat3" {|"" ^ "book" ^ "shelf"|} "" {|"bookshelf"|};
+  t "concat4" {|"" ^ "book"|} "" {|"book"|};
 ]
 
 let program_suite = "program_tests">:::program_tests;;

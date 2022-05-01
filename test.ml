@@ -401,6 +401,13 @@ b
   t "concat3" {|"" ^ "book" ^ "shelf"|} "" {|"bookshelf"|};
   t "concat4" {|"" ^ "book"|} "" {|"book"|};
   t "concat5" {|"book" ^ ""|} "" {|"book"|};
+
+  t "substring" {|let s = "hello world" in substring(s, 0, 5)|} "" {|"hello"|};
+  t "substring_empty" {|let s = "hello world" in substring(s, 0, 0)|} "" {|""|};
+  terr "substring_neg" {|let s = "hello world" in substring(s, -1, 0)|} "" "too small";
+  terr "substring_big" {|let s = "hello world" in substring(s, 1, 100)|} "" "too large";
+  terr "substring_greater" {|let s = "hello world" in substring(s, 5, 0)|} "" "invalid index";
+  terr "substring_not_string" {|let s = 5 in substring(s, 1, 5)|} "" "expected string";
 ]
 
 let program_suite = "program_tests">:::program_tests;;

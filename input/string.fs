@@ -1,2 +1,1 @@
-let x = "blah" in
-  print(x)
+let s = "hello world" in substring(s, 0, 5)

@@ -50,6 +50,7 @@ let err_SET_HIGH_INDEX   = 15L
 let err_CALL_NOT_CLOSURE = 16L
 let err_CALL_ARITY_ERR   = 17L
 let err_LEN_NOT_STRING   = 18L
+let err_INVALID_INDEX_STRING = 19L
 
 
 let dummy_span = (Lexing.dummy_pos, Lexing.dummy_pos);;
@@ -153,6 +154,8 @@ let is_well_formed (p : sourcespan program) : (sourcespan program) fallible =
        wf_E e env @ wf_E idx env
     | ESetItem(e, idx, newval, _pos) ->
        wf_E e env @ wf_E idx env @ wf_E newval env
+    | ESubString(e, sidx, eidx, _pos) ->
+       wf_E e env @ wf_E sidx env @ wf_E eidx env
     | ENil _ -> []
     | EBool _ -> []
     | ENumber(n, loc) ->
@@ -427,6 +430,7 @@ let desugar (p : sourcespan program) : sourcespan program =
     | ETuple(exprs, tag) -> ETuple(List.map helpE exprs, tag)
     | EGetItem(e, idx, tag) -> EGetItem(helpE e, helpE idx, tag)
     | ESetItem(e, idx, newval, tag) -> ESetItem(helpE e, helpE idx, helpE newval, tag)
+    | ESubString(e, sidx, eidx, tag) -> ESubString(helpE e, helpE sidx, helpE eidx, tag)
     | EId(x, tag) -> EId(x, tag)
     | ENumber(n, tag) -> ENumber(n, tag)
     | EString(s, tag) -> EString(s, tag)
@@ -506,6 +510,7 @@ let rename_and_tag (p : tag program) : tag program =
     | ETuple(es, tag) -> ETuple(List.map (helpE env) es, tag)
     | EGetItem(e, idx, tag) -> EGetItem(helpE env e, helpE env idx, tag)
     | ESetItem(e, idx, newval, tag) -> ESetItem(helpE env e, helpE env idx, helpE env newval, tag)
+    | ESubString(e, sidx, eidx, tag) -> ESubString(helpE env e, helpE env sidx, helpE env eidx, tag)
     | EPrim1(op, arg, tag) -> EPrim1(op, helpE env arg, tag)
     | EPrim2(op, left, right, tag) -> EPrim2(op, helpE env left, helpE env right, tag)
     | EIf(c, t, f, tag) -> EIf(helpE env c, helpE env t, helpE env f, tag)
@@ -619,7 +624,11 @@ let anf (p : tag program) : unit aprogram =
        let (idx_imm, idx_setup) = helpI idx in
        let (new_imm, new_setup) = helpI newval in
        (CSetItem(tup_imm, idx_imm, new_imm, ()), tup_setup @ idx_setup @ new_setup)
-         
+    | ESubString(str, sidx, eidx, tag) ->
+       let (str_imm, str_setup) = helpI str in
+       let (sidx_imm, sidx_setup) = helpI sidx in
+       let (eidx_imm, eidx_setup) = helpI eidx in
+       (CSubString(str_imm, sidx_imm, eidx_imm, ()), str_setup @ sidx_setup @ eidx_setup)
 
     | _ -> let (imm, setup) = helpI e in (CImmExpr imm, setup)
 
@@ -638,7 +647,12 @@ let anf (p : tag program) : unit aprogram =
     | EString(s, tag) ->
        let tmp = sprintf "str_%d" tag in
        (ImmId(tmp, ()),  [BLet (tmp, CString(s, ()))])
-
+    | ESubString(str, sidx, eidx, tag) ->
+       let tmp = sprintf "substr_%d" tag in
+       let (str_imm, str_setup) = helpI str in
+       let (sidx_imm, sidx_setup) = helpI sidx in
+       let (eidx_imm, eidx_setup) = helpI eidx in
+       (ImmId(tmp, ()), str_setup @ sidx_setup @ eidx_setup @ [BLet(tmp, CSubString(str_imm, sidx_imm, eidx_imm, ()))])
     | ETuple(args, tag) ->
        let tmp = sprintf "tup_%d" tag in
        let (new_args, new_setup) = List.split (List.map helpI args) in
@@ -744,6 +758,7 @@ let free_vars (e: 'a aexpr) : string list =
     | CTuple(imms, _) -> List.flatten (List.map (fun imm -> helpI imm env) imms)
     | CGetItem(tup, idx, _) -> (helpI tup env) @ (helpI idx env)
     | CSetItem(tup, idx, v, _) -> (helpI tup env) @ (helpI idx env) @ (helpI v env)
+    | CSubString(str, sidx, eidx, _) -> (helpI str env) @ (helpI sidx env) @ (helpI eidx env)
     | CLambda(binds, body, _) -> helpA body (binds @ env)
   and helpI (immexpr: 'a immexpr) (env: string list) : string list =
     match immexpr with
@@ -1413,6 +1428,102 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
           IMov(RegOffsetReg(RAX, R11, word_size, 0), Reg(RDI));
           IMov(Reg(RAX), imm_newval);
     ]
+    | CSubString(str, sidx, eidx, tag) ->
+      let imm_str = compile_imm str env name in
+      let imm_sidx = compile_imm sidx env name in
+      let imm_eidx = compile_imm eidx env name in
+      let get_str_len = compile_cexpr (CPrim1(Len, str, tag)) si env num_args is_tail name in
+      let sidx_isnum = (compile_cexpr (CPrim1(IsNum, sidx, tag)) si env num_args is_tail name) in
+      let eidx_isnum = (compile_cexpr (CPrim1(IsNum, eidx, tag)) si env num_args is_tail name) in
+
+      get_str_len @ [
+        (* move stringlen to stack *)
+        IMov(Reg(R9), Reg(RAX));
+      ] @ eidx_isnum @
+      [
+          IMov(Reg(RDI), const_true);
+          ICmp(Reg(RAX), Reg(RDI));
+          IMov(Reg(RAX), imm_eidx);
+          (* TODO: new error? *)
+          IJne(Label("?err_set_not_num"));
+
+          IMov(Reg(R11), imm_eidx);
+          ICmp(Reg(R11), Const(0L));
+          IJl(Label("?err_set_low_index"));
+          ICmp(Reg(R11), Reg(R9));
+          IJge(Label("?err_set_high_index"));
+      ] @ sidx_isnum @
+      [
+          IMov(Reg(RDI), const_true);
+          ICmp(Reg(RAX), Reg(RDI));
+          IMov(Reg(RAX), imm_sidx);
+          (* TODO: new error? *)
+          IJne(Label("?err_set_not_num"));
+
+          IMov(Reg(R11), imm_sidx);
+          ICmp(Reg(R11), Const(0L));
+          IJl(Label("?err_set_low_index"));
+          ICmp(Reg(R11), Reg(R9));
+          IJge(Label("?err_set_high_index"));
+
+          IPush(Reg(R11));
+      ] @ [
+        IMov(Reg(RAX), imm_eidx);
+        IMov(Reg(scratch_reg), imm_sidx);
+        ISub(Reg(RAX), Reg(scratch_reg));
+        IJl(Label("?err_invalid_index"));
+        IPush(Reg(RAX));
+
+        (* calculate size *)
+
+        (* Add 8 bytes for length word in new string *)
+        IAdd(Reg(RAX), Const(8L));
+        (* Pad value to nearest multiple of 16 *)
+        IAdd(Reg(RAX), Const(15L));
+        IShr(Reg(RAX), Const(4L));
+        IShl(Reg(RAX), Const(4L));
+        IPush(Reg(RAX));
+      ] 
+      @ reserve_size_arg (Reg(RAX)) tag @ [
+        (*
+          r14 heap_size 
+          rdi diff
+          r10 start_ptr
+         *)
+        
+        IPop(Reg(R14));
+        IPop(Reg(RDI));
+        IPop(Reg(R10));
+
+        IMov(Reg(RAX), imm_str);
+        ISub(Reg(RAX), Const(string_tag));
+        IAdd(Reg(RAX), Const(Int64.of_int word_size));
+        IAdd(Reg(R10), Reg(RAX));
+
+        (* put length in new string *)
+        IMov(RegOffset(0, R15), Reg(RDI));
+
+        (* loop while counter is less than diff *)
+        (* Use R11 as counter, starting at first character *)
+        IMov(Reg(R11), Const(0L));
+        ILabel(sprintf "substr_%d" tag);
+        ICmp(Reg(RDI), Reg(R11));
+        IJle(Label(sprintf "done1_%d" tag));
+        (* Copy a character from e1 to new string *)
+        IMov(Reg(AX), RegOffsetReg(R10, R11, 1, 0));
+        IMov(RegOffsetReg(R15, R11, 1, 8), Reg(AX));
+        (* Increment R11 to next character, jump back to top of loop *)
+        IAdd(Reg(R11), Const(2L));
+        IJmp(Label(sprintf "substr_%d" tag));
+        ILabel(sprintf "done1_%d" tag);
+
+
+        IMov(Reg(RAX), Reg(R15));
+        IAdd(Reg(RAX), HexConst(string_tag));
+
+        (* Update R15 to new value *)
+        IAdd(Reg(R15), Reg(R14));
+      ]
 
     | CLambda(binds, body, tag) ->
 
@@ -1634,6 +1745,7 @@ global ?our_code_starts_here" in
 ?err_get_not_num:%s
 ?err_set_not_num:%s
 ?err_len_not_string:%s
+?err_invalid_index:%s
 "
                        (to_asm (native_call (Label "?error") [Const(err_COMP_NOT_NUM); Reg(scratch_reg)]))
                        (to_asm (native_call (Label "?error") [Const(err_ARITH_NOT_NUM); Reg(scratch_reg)]))
@@ -1653,6 +1765,7 @@ global ?our_code_starts_here" in
                        (to_asm (native_call (Label "?error") [Const(err_GET_NOT_NUM); Reg(scratch_reg)]))
                        (to_asm (native_call (Label "?error") [Const(err_SET_NOT_NUM); Reg(scratch_reg)]))
                        (to_asm (native_call (Label "?error") [Const(err_LEN_NOT_STRING); Reg(RAX)]))
+                       (to_asm (native_call (Label "?error") [Const(err_INVALID_INDEX_STRING); Reg(RAX)]))
   in
   match anfed with
   | AProgram(body, _) ->

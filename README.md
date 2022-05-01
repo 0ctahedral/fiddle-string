@@ -34,8 +34,6 @@ We added to printHelp a case for strings which loops over the length of the stri
 every other character.
 
 ## TODO: 
-- garbage collection
-- concat
 - substring
 - printf
 - sprintf

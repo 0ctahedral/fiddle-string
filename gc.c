@@ -11,6 +11,8 @@ extern uint64_t TUPLE_TAG_MASK;
 extern uint64_t CLOSURE_TAG;
 extern uint64_t TUPLE_TAG;
 extern uint64_t FWD_PTR_TAG;
+extern uint64_t STRING_TAG;
+extern uint64_t STRING_TAG_MASK;
 extern uint64_t NIL;
 extern uint64_t tupleCounter;
 extern uint64_t *STACK_BOTTOM;
@@ -66,11 +68,49 @@ void smarter_print_heap(uint64_t *from_start, uint64_t *from_end,
 uint64_t *copy_if_needed(uint64_t *garter_val_addr, uint64_t *heap_top) {
   // printf("Heap top called with %p\n", heap_top);
   uint64_t garter_val = *garter_val_addr;
-  // printf("Copy if needed: ");
+  // printf("[%p]Copy if needed: ", garter_val_addr);
   // printHelp(stdout, garter_val);
   // printf("\n");
   uint64_t *heap_addr;
   uint64_t len;
+
+  if ((garter_val & STRING_TAG_MASK) == STRING_TAG) {
+    heap_addr = (uint64_t *)(garter_val - STRING_TAG);
+
+    if ((*heap_addr & STRING_TAG_MASK) == FWD_PTR_TAG) {
+       // printf("Found forwarding pointer, updating\n");
+      *garter_val_addr = *heap_addr - FWD_PTR_TAG + STRING_TAG;
+      return heap_top;
+    }
+
+    // printf("found a string: ");
+    // printHelp(stdout, garter_val);
+    
+    uint64_t str_len = (*heap_addr / 2);
+    uint64_t str_len_bytes = str_len * 2;
+    uint64_t str_len_words = str_len_bytes / 8;
+    if (str_len_bytes % 8 != 0) {
+      str_len_words++;
+    }
+
+    // printf(" of length: %ld\n", str_len_words);
+
+    len = str_len_words + 1;
+    
+    for (int i = 0; i < len; i++) {
+      heap_top[i] = heap_addr[i];
+    }
+
+    *heap_addr = (uint64_t)heap_top | FWD_PTR_TAG;
+
+    *garter_val_addr = (uint64_t)heap_top + STRING_TAG;
+    heap_top += len;
+    if (len % 2 == 1) {
+      *heap_top = 0xEEEEE;
+      heap_top += 1;
+    }
+  }
+
   if ((garter_val & TUPLE_TAG_MASK) == TUPLE_TAG && garter_val != NIL) {
     // printf("Found tuple, copying: \n");
     // printHelp(stdout, garter_val);

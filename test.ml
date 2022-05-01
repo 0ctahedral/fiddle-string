@@ -364,6 +364,19 @@ let gc = [
  ""
  "(6, 4)";
 
+
+ tgc "string" (8 + builtins_size)
+ {|let s = "book" in
+   let f = (lambda: "blah") in
+    begin
+      f();
+      f();
+      f();
+      f();
+      s
+    end
+    |} "" {|"book"|};
+
   ]
 
 let input = [
@@ -387,6 +400,7 @@ b
   t "concat2" {|"" ^ ""|} "" {|""|};
   t "concat3" {|"" ^ "book" ^ "shelf"|} "" {|"bookshelf"|};
   t "concat4" {|"" ^ "book"|} "" {|"book"|};
+  t "concat5" {|"book" ^ ""|} "" {|"book"|};
 ]
 
 let program_suite = "program_tests">:::program_tests;;
@@ -400,6 +414,7 @@ let string_suite = "string_tests">:::string_tests;;
 
 let () =
   run_test_tt_main ("all_tests">:::[
+    gc_suite;
     string_suite;
     simple_suite;
     pair_suite;
@@ -407,6 +422,5 @@ let () =
     fv_suite;
     program_suite;
     oom_suite;
-    gc_suite;
     input_file_test_suite ()])
 ;;

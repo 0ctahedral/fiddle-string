@@ -1343,8 +1343,15 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
           ILineComment("string ends here");
         ]
     | CPrintf(fmt, args, tag) -> 
+        let fmt_isstring = (compile_cexpr (CPrim1(IsString, fmt, tag)) si env num_args is_tail name) in
         let new_args = [Const(Int64.of_int (List.length args))] @ (List.map (fun arg -> (compile_imm arg env name)) (fmt :: args)) in 
-        native_call (Label "?our_printf") new_args
+        fmt_isstring @
+        [
+          IMov(Reg(RDI), const_true);
+          ICmp(Reg(RAX), Reg(RDI));
+          IMov(Reg(RAX), List.nth new_args 1);
+          IJne(Label("?err_len_not_string"));
+        ] @ (native_call (Label "?our_printf") new_args)
     | CTuple(exps, tag) -> 
             let total_offset, set_tuple = List.fold_left_map
             (fun offset e -> (offset + 1, [IMov(Reg(RAX), (compile_imm e env name)); IMov(RegOffset(offset * word_size, R15), Reg(RAX))]))

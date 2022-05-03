@@ -414,6 +414,7 @@ b
   t "printf_multiple" {|printf("fmt: {} {} {}", 5, (10, 2), "cheese")|} "" {|"fmt: 5, (10, 2), cheese"|};
   terr "printf_not_enough_args" {|printf("fmt: {} {} {}", 5, (10, 2))|} "" "not enough arguments";
   terr "printf_not_enough_args" {|printf("fmt: {}", 5, (10, 2))|} "" "too many arguments";
+  terr "printf_not_string" {|printf(72, 5, (10, 2))|} "" "expected string";
 ]
 
 let program_suite = "program_tests">:::program_tests;;

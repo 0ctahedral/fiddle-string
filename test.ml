@@ -410,10 +410,10 @@ b
   terr "substring_greater" {|let s = "hello world" in substring(s, 5, 0)|} "" "invalid index";
   terr "substring_not_string" {|let s = 5 in substring(s, 1, 5)|} "" "expected string";
 
-  t "printf" {|printf("fmt: {}", 5)|} "" {|"fmt: 5"|};
-  t "printf_multiple" {|printf("fmt: {} {} {}", 5, (10, 2), "cheese")|} "" {|"fmt: 5, (10, 2), cheese"|};
+  t "printf" {|printf("fmt: {}", 5)|} "" "fmt: 5\nnil";
+  t "printf_multiple" {|printf("fmt: {}, {}, {}", 5, (10, 2), "cheese")|} "" "fmt: 5, (10, 2), \"cheese\"\nnil";
   terr "printf_not_enough_args" {|printf("fmt: {} {} {}", 5, (10, 2))|} "" "not enough arguments";
-  terr "printf_not_enough_args" {|printf("fmt: {}", 5, (10, 2))|} "" "too many arguments";
+  terr "printf_too_many_args" {|printf("fmt: {}", 5, (10, 2))|} "" "too many arguments";
   terr "printf_not_string" {|printf(72, 5, (10, 2))|} "" "expected string";
 ]
 

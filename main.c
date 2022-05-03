@@ -192,14 +192,61 @@ void printHelp(FILE *out, SNAKEVAL val) {
   }
 }
 
+int get_num_fmt(SNAKEVAL val) {
+  int count = 0;
+  uint64_t *addr = (uint64_t *)(val - STRING_TAG);
+  uint64_t length = (*addr) / 2;
+  uint8_t* c = (uint8_t*)(addr+1);
+
+    // loop over all characters
+    for (int i = 1; i < length * 2; i += 2) {
+      if (c[i] == '{' && (i + 2) < length * 2) {
+        i += 2;
+        if (c[i] == '}') {
+          count++;
+        }
+      }
+    }
+
+  return count;
+}
+
 SNAKEVAL our_printf(SNAKEVAL num_args, SNAKEVAL fmt, ...) {
+
+  // get the number of args
+  int num_fmt = get_num_fmt(fmt);
+
+  if (num_fmt < num_args) {
+    error(ERR_TOO_MANY_ARGS, fmt);
+  } else if (num_fmt > num_args) {
+    error(ERR_NOT_ENOUGH_ARGS, fmt);
+  }
+
+
+  uint64_t *addr = (uint64_t *)(fmt - STRING_TAG);
+  uint64_t length = (*addr) / 2;
+  uint8_t* c = (uint8_t*)(addr+1);
+  int curr_arg = 0;
+
+  // print it all out
   va_list args;
   va_start(args, fmt);
-  for (int i = 0; i < num_args; ++i) {
-    SNAKEVAL val = va_arg(args, SNAKEVAL);
-    printHelp(stdout, val);
+
+  // loop over all characters
+  for (int i = 1; i < length * 2; i += 2) {
+    if (c[i] == '{' && (i + 2) < length * 2) {
+      i += 2;
+      if (c[i] == '}') {
+        SNAKEVAL val = va_arg(args, SNAKEVAL);
+        printHelp(stdout, val);
+      }
+    } else {
+      fprintf(stdout, "%c", c[i]);
+    }
   }
   va_end(args);
+
+  fprintf(stdout, "\n");
   return NIL;
 }
 

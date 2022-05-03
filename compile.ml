@@ -51,6 +51,8 @@ let err_CALL_NOT_CLOSURE = 16L
 let err_CALL_ARITY_ERR   = 17L
 let err_LEN_NOT_STRING   = 18L
 let err_INVALID_INDEX_STRING = 19L
+let err_NOT_ENOUGH_ARGS = 20L
+let err_TOO_MANY_ARGS = 21L
 
 
 let dummy_span = (Lexing.dummy_pos, Lexing.dummy_pos);;
@@ -154,6 +156,7 @@ let is_well_formed (p : sourcespan program) : (sourcespan program) fallible =
        wf_E e env @ wf_E idx env
     | ESetItem(e, idx, newval, _pos) ->
        wf_E e env @ wf_E idx env @ wf_E newval env
+    | EPrintf(fmt, args, _) -> wf_E fmt env @ List.concat (List.map (fun e -> wf_E e env) args)
     | ESubString(e, sidx, eidx, _pos) ->
        wf_E e env @ wf_E sidx env @ wf_E eidx env
     | ENil _ -> []
@@ -430,6 +433,7 @@ let desugar (p : sourcespan program) : sourcespan program =
     | ETuple(exprs, tag) -> ETuple(List.map helpE exprs, tag)
     | EGetItem(e, idx, tag) -> EGetItem(helpE e, helpE idx, tag)
     | ESetItem(e, idx, newval, tag) -> ESetItem(helpE e, helpE idx, helpE newval, tag)
+    | EPrintf(fmt, args, tag) -> EPrintf(helpE fmt, List.map helpE args, tag)
     | ESubString(e, sidx, eidx, tag) -> ESubString(helpE e, helpE sidx, helpE eidx, tag)
     | EId(x, tag) -> EId(x, tag)
     | ENumber(n, tag) -> ENumber(n, tag)
@@ -510,6 +514,7 @@ let rename_and_tag (p : tag program) : tag program =
     | ETuple(es, tag) -> ETuple(List.map (helpE env) es, tag)
     | EGetItem(e, idx, tag) -> EGetItem(helpE env e, helpE env idx, tag)
     | ESetItem(e, idx, newval, tag) -> ESetItem(helpE env e, helpE env idx, helpE env newval, tag)
+    | EPrintf(fmt, args, tag) -> EPrintf(helpE env fmt, List.map (helpE env) args, tag)
     | ESubString(e, sidx, eidx, tag) -> ESubString(helpE env e, helpE env sidx, helpE env eidx, tag)
     | EPrim1(op, arg, tag) -> EPrim1(op, helpE env arg, tag)
     | EPrim2(op, left, right, tag) -> EPrim2(op, helpE env left, helpE env right, tag)
@@ -647,6 +652,11 @@ let anf (p : tag program) : unit aprogram =
     | EString(s, tag) ->
        let tmp = sprintf "str_%d" tag in
        (ImmId(tmp, ()),  [BLet (tmp, CString(s, ()))])
+    | EPrintf(fmt, args, tag) ->
+       let tmp = sprintf "printf_%d" tag in
+       let (new_args, new_setup) = List.split (List.map helpI args) in
+       let (new_fmt, fmt_setup) = helpI fmt in
+       (ImmId(tmp, ()), fmt_setup @ (List.concat new_setup) @ [BLet (tmp, CPrintf(new_fmt, new_args, ()))])
     | ESubString(str, sidx, eidx, tag) ->
        let tmp = sprintf "substr_%d" tag in
        let (str_imm, str_setup) = helpI str in
@@ -755,6 +765,7 @@ let free_vars (e: 'a aexpr) : string list =
                                          (helpI func env) @ arg_free_vars)
     | CImmExpr(imm) -> helpI imm env
     | CString _ -> []
+    | CPrintf(fmt, args, _) -> helpI fmt env @ (List.flatten (List.map (fun arg -> helpI arg env) args))
     | CTuple(imms, _) -> List.flatten (List.map (fun imm -> helpI imm env) imms)
     | CGetItem(tup, idx, _) -> (helpI tup env) @ (helpI idx env)
     | CSetItem(tup, idx, v, _) -> (helpI tup env) @ (helpI idx env) @ (helpI v env)
@@ -1331,6 +1342,9 @@ and compile_cexpr (e : tag cexpr) (si : int) (env : arg name_envt name_envt) (nu
           (* increase the heap pointer and pad if needed *)
           ILineComment("string ends here");
         ]
+    | CPrintf(fmt, args, tag) -> 
+        let new_args = [Const(Int64.of_int (List.length args))] @ (List.map (fun arg -> (compile_imm arg env name)) (fmt :: args)) in 
+        native_call (Label "?our_printf") new_args
     | CTuple(exps, tag) -> 
             let total_offset, set_tuple = List.fold_left_map
             (fun offset e -> (offset + 1, [IMov(Reg(RAX), (compile_imm e env name)); IMov(RegOffset(offset * word_size, R15), Reg(RAX))]))
@@ -1718,6 +1732,7 @@ let compile_prog (anfed, (env : arg name_envt name_envt)) =
 extern ?error
 extern ?input
 extern ?print
+extern ?our_printf
 extern ?print_stack
 extern ?equal
 extern ?try_gc

@@ -93,6 +93,7 @@ and string_of_expr_with (depth : int) (print_a : 'a -> string) (e : 'a expr) : s
   | ESetItem(e, idx, newval, a) -> sprintf "%s[%s] := %s %s" (string_of_expr e) (string_of_expr idx) (string_of_expr newval) (print_a a)
   | ENumber(n, a) -> (Int64.to_string n) ^ (print_a a)
   | EString(s, a) -> (sprintf "\"%s\"" s) ^ (print_a a)
+  | EPrintf(fmt, args, a) -> "printf(" ^ (string_of_expr fmt) ^ (ExtString.String.join ", " (List.map string_of_expr args)) ^ ")"  ^ (print_a a)
   | EBool(b, a) -> (string_of_bool b) ^ (print_a a)
   | ENil a -> "nil " ^ (print_a a)
   | EId(x, a) -> x ^ (print_a a)
@@ -170,6 +171,7 @@ and string_of_cexpr_with (depth : int) (print_a : 'a -> string) (c : 'a cexpr) :
   match c with
   | CString(s, a) -> sprintf "\"%s\"%s" s (print_a a)
   | CSubString(s, sidx, eidx, a) -> sprintf "%s[%s:%s] %s" (string_of_immexpr s) (string_of_immexpr sidx) (string_of_immexpr eidx) (print_a a)
+  | CPrintf(fmt, args, a) -> "printf(" ^ (string_of_immexpr fmt) ^ (ExtString.String.join ", " (List.map string_of_immexpr args)) ^ ")"  ^ (print_a a)
   | CTuple(imms, a) -> sprintf "(%s)%s" (ExtString.String.join ", " (List.map string_of_immexpr imms)) (print_a a)
   | CGetItem(e, idx, a) -> sprintf "%s[%s]%s" (string_of_immexpr e) (string_of_immexpr idx) (print_a a)
   | CSetItem(e, idx, newval, a) -> sprintf "%s[%s] := %s %s" (string_of_immexpr e) (string_of_immexpr idx) (string_of_immexpr newval) (print_a a)
@@ -271,6 +273,10 @@ let rec format_expr (fmt : Format.formatter) (print_a : 'a -> string) (e : 'a ex
      open_label fmt "ESetItem" (print_a a);
      help e; print_comma_sep fmt; help idx; pp_print_string fmt " := "; help newval;
      close_paren fmt
+  | EPrintf(fmts, args, a) ->
+      open_label fmt "EPrintf" (print_a a);
+      help fmts;
+      print_list fmt (fun fmt -> format_expr fmt print_a) args print_comma_sep; 
   | ESubString(s, sidx, eidx, a) ->
      open_label fmt "ESubString" (print_a a);
      help s; print_comma_sep fmt; help sidx; pp_print_string fmt ", "; help eidx;

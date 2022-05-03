@@ -50,6 +50,7 @@ rule token = parse
   | "isbool" { ISBOOL }
   | "isstring" { ISSTRING }
   | "substring" { SUBSTRING }
+  | "printf" { PRINTF }
   | "len" { LEN }
   | "isnum" { ISNUM }
   | "add1" { ADD1 }

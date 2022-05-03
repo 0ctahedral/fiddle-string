@@ -404,10 +404,16 @@ b
 
   t "substring" {|let s = "hello world" in substring(s, 0, 5)|} "" {|"hello"|};
   t "substring_empty" {|let s = "hello world" in substring(s, 0, 0)|} "" {|""|};
+  t "let_substr" {|let s = substring("bloopy", 0, 2) in s|} "" {|"bl"|};
   terr "substring_neg" {|let s = "hello world" in substring(s, -1, 0)|} "" "too small";
   terr "substring_big" {|let s = "hello world" in substring(s, 1, 100)|} "" "too large";
   terr "substring_greater" {|let s = "hello world" in substring(s, 5, 0)|} "" "invalid index";
   terr "substring_not_string" {|let s = 5 in substring(s, 1, 5)|} "" "expected string";
+
+  t "printf" {|printf("fmt: {}", 5)|} "" {|"fmt: 5"|};
+  t "printf_multiple" {|printf("fmt: {} {} {}", 5, (10, 2), "cheese")|} "" {|"fmt: 5, (10, 2), cheese"|};
+  terr "printf_not_enough_args" {|printf("fmt: {} {} {}", 5, (10, 2))|} "" "not enough arguments";
+  terr "printf_not_enough_args" {|printf("fmt: {}", 5, (10, 2))|} "" "too many arguments";
 ]
 
 let program_suite = "program_tests">:::program_tests;;

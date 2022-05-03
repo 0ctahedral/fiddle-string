@@ -13,6 +13,7 @@ extern void error() asm("?error");
 extern SNAKEVAL
 set_stack_bottom(uint64_t *stack_bottom) asm("?set_stack_bottom");
 extern SNAKEVAL print(SNAKEVAL val) asm("?print");
+extern SNAKEVAL our_printf(SNAKEVAL len, SNAKEVAL fmt, ...) asm("?our_printf");
 extern SNAKEVAL input() asm("?input");
 extern SNAKEVAL printStack(SNAKEVAL val, uint64_t *rsp, uint64_t *rbp,
                            uint64_t args) asm("?print_stack");
@@ -57,6 +58,8 @@ const uint64_t ERR_CALL_NOT_CLOSURE = 16;
 const uint64_t ERR_CALL_ARITY_ERR = 17;
 const uint64_t ERR_LEN_NOT_STRING = 18;
 const uint64_t ERR_INVALID_INDEX_STRING = 19;
+const uint64_t ERR_NOT_ENOUGH_ARGS = 20;
+const uint64_t ERR_TOO_MANY_ARGS = 21;
 
 size_t HEAP_SIZE;
 uint64_t *STACK_BOTTOM;
@@ -187,6 +190,17 @@ void printHelp(FILE *out, SNAKEVAL val) {
   } else {
     fprintf(out, "Unknown value: %#018lx", val);
   }
+}
+
+SNAKEVAL our_printf(SNAKEVAL num_args, SNAKEVAL fmt, ...) {
+  va_list args;
+  va_start(args, fmt);
+  for (int i = 0; i < num_args; ++i) {
+    SNAKEVAL val = va_arg(args, SNAKEVAL);
+    printHelp(stdout, val);
+  }
+  va_end(args);
+  return NIL;
 }
 
 SNAKEVAL printStack(SNAKEVAL val, uint64_t *rsp, uint64_t *rbp, uint64_t args) {
@@ -328,6 +342,12 @@ void error(uint64_t code, SNAKEVAL val) {
   case ERR_INVALID_INDEX_STRING:
     fprintf(stderr, "Error: invalid index ");
     printHelp(stderr, val);
+    break;
+  case ERR_NOT_ENOUGH_ARGS:
+    fprintf(stderr, "Error: not enough arguments to printf");
+    break;
+  case ERR_TOO_MANY_ARGS:
+    fprintf(stderr, "Error: too many arguments to printf");
     break;
   default:
     fprintf(stderr, "Error: Unknown error code: %ld, val: ", code);

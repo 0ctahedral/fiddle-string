@@ -48,6 +48,7 @@ and call_type = Native | Snake | Prim | Unknown
 and 'a expr =
   | ESeq of 'a expr * 'a expr * 'a
   | ESubString of 'a expr * 'a expr * 'a expr * 'a
+  | EPrintf of 'a expr * 'a expr list * 'a
   | ETuple of 'a expr list * 'a
   | EGetItem of 'a expr * 'a expr * 'a
   | ESetItem of 'a expr * 'a expr * 'a expr * 'a
@@ -85,6 +86,7 @@ and 'a cexpr = (* compound expressions *)
   | CTuple of 'a immexpr list * 'a
   | CGetItem of 'a immexpr * 'a immexpr * 'a
   | CSetItem of 'a immexpr * 'a immexpr * 'a immexpr * 'a
+  | CPrintf of 'a immexpr * 'a immexpr list * 'a
   | CSubString of 'a immexpr * 'a immexpr * 'a immexpr * 'a
   | CLambda of string list * 'a aexpr * 'a
 and 'a aexpr = (* anf expressions *)
@@ -116,6 +118,7 @@ let get_tag_E e = match e with
   | ETuple(_, t) -> t
   | EGetItem(_, _, t) -> t
   | ESetItem(_, _, _, t) -> t
+  | EPrintf(_, _, t) -> t
   | ESubString(_, _, _, t) -> t
   | ESeq(_, _, t) -> t
   | ELambda(_, _, t) -> t
@@ -132,6 +135,7 @@ let rec map_tag_E (f : 'a -> 'b) (e : 'a expr) =
   | ETuple(exprs, a) -> ETuple(List.map (map_tag_E f) exprs, f a)
   | EGetItem(e, idx, a) -> EGetItem(map_tag_E f e, map_tag_E f idx, f a)
   | ESetItem(e, idx, newval, a) -> ESetItem(map_tag_E f e, map_tag_E f idx, map_tag_E f newval, f a)
+  | EPrintf(fmt, args, a) -> EPrintf(map_tag_E f fmt, List.map (map_tag_E f) args, f a)
   | ESubString(e, sidx, eidx, a) -> ESubString(map_tag_E f e, map_tag_E f sidx, map_tag_E f eidx, f a)
   | EId(x, a) -> EId(x, f a)
   | ENumber(n, a) -> ENumber(n, f a)
@@ -235,7 +239,8 @@ and untagE e =
   | ETuple(exprs, _) -> ETuple(List.map untagE exprs, ())
   | EGetItem(e, idx, _) -> EGetItem(untagE e, untagE idx, ())
   | ESetItem(e, idx, newval, _) -> ESetItem(untagE e, untagE idx, untagE newval, ())
-  | ESubString(e, sidx, eidx, a) -> ESubString(untagE e, untagE sidx, untagE eidx, ())
+  | ESubString(e, sidx, eidx, _) -> ESubString(untagE e, untagE sidx, untagE eidx, ())
+  | EPrintf(fmt, args, _) -> EPrintf(untagE fmt, List.map untagE args, ())
   | EId(x, _) -> EId(x, ())
   | ENumber(n, _) -> ENumber(n, ())
   | EString(s, _) -> EString(s, ())
@@ -301,6 +306,9 @@ let atag (p : 'a aprogram) : tag aprogram =
     | CString(s, _) ->
        let string_tag = tag() in
        CString(s, string_tag)
+    | CPrintf(fmt, args, _) ->
+        let p_tag = tag() in
+        CPrintf(helpI fmt, List.map helpI args, p_tag)
     | CTuple(es, _) ->
        let tup_tag = tag() in
        CTuple(List.map helpI es, tup_tag)
